@@ -1,5 +1,5 @@
 # Mattermost-slack-bridge
-Experimental bride between mattermost and slack (not affiliated with mattermost or slack).
+> Experimental bride between mattermost and slack (not affiliated with mattermost or slack).
 
 The following features are currently supported, but limited to oner channel at the moment:
 - Chats in channels work
