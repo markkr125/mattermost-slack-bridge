@@ -14,6 +14,7 @@ What does not work (and will not work):
 - Better error handling, do not crash on errors
 - Threads are currently tracked in RAM, it needs to be in some sort external process (Redis?)
 - Support more then one channel, allow some sort of channel mapping.
+- Editing/Delete messages needs to be implemented
 
 # Configure the Slack App
 ## OAuth & Permissions
