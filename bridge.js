@@ -1,12 +1,13 @@
 // bridge.js
 // Requirements (add fs for temp if needed, but using buffers here):
-// npm install @slack/bolt axios ws dotenv form-data
+// npm install @slack/bolt axios ws dotenv form-data ioredis
 
 require('dotenv').config();
 const { App, ExpressReceiver } = require('@slack/bolt');
 const axios = require('axios');
 const WebSocket = require('ws');
 const FormData = require('form-data');
+const Redis = require('ioredis');
 
 const slackSigningSecret = process.env.SLACK_SIGNING_SECRET;
 const slackBotToken = process.env.SLACK_BOT_TOKEN;
@@ -14,6 +15,26 @@ const mmToken = process.env.MM_TOKEN;
 const mmUrl = process.env.MM_URL;
 const slackChannelId = process.env.SLACK_CHANNEL_ID;
 const mmChannelId = process.env.MM_CHANNEL_ID;
+const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
+const redisExpiryDays = parseInt(process.env.REDIS_EXPIRY_DAYS || '180', 10);
+
+// Initialize Redis client
+const redis = new Redis(redisUrl, {
+  retryStrategy: (times) => {
+    const delay = Math.min(times * 50, 2000);
+    console.log(`Redis connection retry attempt ${times}, waiting ${delay}ms`);
+    return delay;
+  },
+  maxRetriesPerRequest: 3
+});
+
+redis.on('connect', () => {
+  console.log('Redis connected');
+});
+
+redis.on('error', (err) => {
+  console.error('Redis error:', err.message);
+});
 
 const receiver = new ExpressReceiver({ signingSecret: slackSigningSecret });
 const slackApp = new App({
@@ -28,9 +49,24 @@ const mmApi = axios.create({
   headers: { 'Authorization': `Bearer ${mmToken}` }
 });
 
-// Thread maps
-const slackToMmThread = new Map(); // slack thread_ts => mm root_id
-const mmToSlackThread = new Map(); // mm root_id => slack thread_ts
+// Helper functions for Redis-based thread mapping
+const REDIS_EXPIRY_SECONDS = redisExpiryDays * 24 * 60 * 60;
+
+async function setSlackToMm(slackTs, mmId) {
+  await redis.setex(`slack:${slackTs}`, REDIS_EXPIRY_SECONDS, mmId);
+}
+
+async function getSlackToMm(slackTs) {
+  return await redis.get(`slack:${slackTs}`);
+}
+
+async function setMmToSlack(mmId, slackTs) {
+  await redis.setex(`mm:${mmId}`, REDIS_EXPIRY_SECONDS, slackTs);
+}
+
+async function getMmToSlack(mmId) {
+  return await redis.get(`mm:${mmId}`);
+}
 
 let slackBotUserId;
 let mmBotUserId;
@@ -59,6 +95,8 @@ async function init() {
   ws.on('message', async (data) => {
     try {
       const event = JSON.parse(data.toString());
+      
+      // Handle new posts
       if (event.event === 'posted') {
         const post = JSON.parse(event.data.post);
         if (post.channel_id !== mmChannelId || post.user_id === mmBotUserId) return;
@@ -97,7 +135,7 @@ async function init() {
 
         let slackThreadTs;
         if (post.root_id) {
-          slackThreadTs = mmToSlackThread.get(post.root_id);
+          slackThreadTs = await getMmToSlack(post.root_id);
         }
 
         if (slackThreadTs) {
@@ -134,14 +172,62 @@ async function init() {
           }
 
           if (!post.root_id) {
-            mmToSlackThread.set(post.id, response.ts);
-            slackToMmThread.set(response.ts, post.id);
+            await setMmToSlack(post.id, response.ts);
+            await setSlackToMm(response.ts, post.id);
           }
         } else {
           const response = await slackApp.client.chat.postMessage(slackMessage);
           if (!post.root_id) {
-            mmToSlackThread.set(post.id, response.ts);
-            slackToMmThread.set(response.ts, post.id);
+            await setMmToSlack(post.id, response.ts);
+            await setSlackToMm(response.ts, post.id);
+          }
+        }
+      }
+      
+      // Handle post edits
+      else if (event.event === 'post_edited') {
+        const post = JSON.parse(event.data.post);
+        if (post.channel_id !== mmChannelId || post.user_id === mmBotUserId) return;
+        
+        const slackTs = await getMmToSlack(post.id);
+        if (slackTs) {
+          try {
+            await slackApp.client.chat.update({
+              channel: slackChannelId,
+              ts: slackTs,
+              text: post.message,
+              blocks: [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": post.message
+                  }
+                }
+              ]
+            });
+            console.log(`Updated Slack message ${slackTs} from MM edit`);
+          } catch (err) {
+            console.error('Error updating Slack message:', err.message);
+          }
+        }
+      }
+      
+      // Handle post deletes
+      else if (event.event === 'post_deleted') {
+        const post = JSON.parse(event.data.post);
+        if (post.channel_id !== mmChannelId) return;
+        
+        const slackTs = await getMmToSlack(post.id);
+        if (slackTs) {
+          try {
+            await slackApp.client.chat.delete({
+              channel: slackChannelId,
+              ts: slackTs
+            });
+            console.log(`Deleted Slack message ${slackTs} from MM delete`);
+          } catch (err) {
+            console.error('Error deleting Slack message:', err.message);
           }
         }
       }
@@ -162,9 +248,10 @@ async function init() {
     console.error('Mattermost WebSocket error:', err);
   });
 
-  // Set up Slack message listener
+  // Set up Slack message listener for new messages
   slackApp.message(async ({ message }) => {
     try {
+      // Skip bot messages and handle only regular messages (not edits/deletes)
       if (message.channel !== slackChannelId || message.user === slackBotUserId || message.subtype) return;
 
       let userName = 'Unknown User';
@@ -191,7 +278,7 @@ async function init() {
 
       let mmRootId;
       if (message.thread_ts) {
-        mmRootId = slackToMmThread.get(message.thread_ts);
+        mmRootId = await getSlackToMm(message.thread_ts);
       }
 
       if (mmRootId) {
@@ -235,11 +322,49 @@ async function init() {
       const newPost = await mmApi.post('/posts', mmPost);
 
       if (!message.thread_ts) {
-        slackToMmThread.set(message.ts, newPost.data.id);
-        mmToSlackThread.set(newPost.data.id, message.ts);
+        await setSlackToMm(message.ts, newPost.data.id);
+        await setMmToSlack(newPost.data.id, message.ts);
       }
     } catch (err) {
       console.error('Error processing Slack message:', err.message);
+    }
+  });
+  
+  // Set up Slack event listener for message changes (edits)
+  slackApp.event('message', async ({ event }) => {
+    try {
+      // Handle message edits
+      if (event.subtype === 'message_changed' && event.channel === slackChannelId) {
+        const message = event.message;
+        if (message.user === slackBotUserId) return;
+        
+        const mmPostId = await getSlackToMm(message.ts);
+        if (mmPostId) {
+          try {
+            await mmApi.put(`/posts/${mmPostId}/patch`, {
+              message: message.text
+            });
+            console.log(`Updated MM post ${mmPostId} from Slack edit`);
+          } catch (err) {
+            console.error('Error updating MM post:', err.message);
+          }
+        }
+      }
+      
+      // Handle message deletes
+      else if (event.subtype === 'message_deleted' && event.channel === slackChannelId) {
+        const mmPostId = await getSlackToMm(event.previous_message.ts);
+        if (mmPostId) {
+          try {
+            await mmApi.delete(`/posts/${mmPostId}`);
+            console.log(`Deleted MM post ${mmPostId} from Slack delete`);
+          } catch (err) {
+            console.error('Error deleting MM post:', err.message);
+          }
+        }
+      }
+    } catch (err) {
+      console.error('Error processing Slack event:', err.message);
     }
   });
 }
