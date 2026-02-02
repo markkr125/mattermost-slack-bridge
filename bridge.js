@@ -49,23 +49,41 @@ const mmApi = axios.create({
   headers: { 'Authorization': `Bearer ${mmToken}` }
 });
 
-// Helper functions for Redis-based thread mapping
+// Helper functions for Redis-based thread mapping with error handling
 const REDIS_EXPIRY_SECONDS = redisExpiryDays * 24 * 60 * 60;
 
 async function setSlackToMm(slackTs, mmId) {
-  await redis.setex(`slack:${slackTs}`, REDIS_EXPIRY_SECONDS, mmId);
+  try {
+    await redis.setex(`slack:${slackTs}`, REDIS_EXPIRY_SECONDS, mmId);
+  } catch (err) {
+    console.error('Error saving to Redis (slack->mm):', err.message);
+  }
 }
 
 async function getSlackToMm(slackTs) {
-  return await redis.get(`slack:${slackTs}`);
+  try {
+    return await redis.get(`slack:${slackTs}`);
+  } catch (err) {
+    console.error('Error reading from Redis (slack->mm):', err.message);
+    return null;
+  }
 }
 
 async function setMmToSlack(mmId, slackTs) {
-  await redis.setex(`mm:${mmId}`, REDIS_EXPIRY_SECONDS, slackTs);
+  try {
+    await redis.setex(`mm:${mmId}`, REDIS_EXPIRY_SECONDS, slackTs);
+  } catch (err) {
+    console.error('Error saving to Redis (mm->slack):', err.message);
+  }
 }
 
 async function getMmToSlack(mmId) {
-  return await redis.get(`mm:${mmId}`);
+  try {
+    return await redis.get(`mm:${mmId}`);
+  } catch (err) {
+    console.error('Error reading from Redis (mm->slack):', err.message);
+    return null;
+  }
 }
 
 let slackBotUserId;
@@ -251,8 +269,8 @@ async function init() {
   // Set up Slack message listener for new messages
   slackApp.message(async ({ message }) => {
     try {
-      // Skip bot messages and handle only regular messages (not edits/deletes)
-      if (message.channel !== slackChannelId || message.user === slackBotUserId || message.subtype) return;
+      // Skip bot messages, and only process regular messages without subtype
+      if (message.channel !== slackChannelId || message.user === slackBotUserId) return;
 
       let userName = 'Unknown User';
       let avatarUrl = '';
@@ -330,10 +348,10 @@ async function init() {
     }
   });
   
-  // Set up Slack event listener for message changes (edits)
+  // Set up Slack event listener for message changes and deletes only
   slackApp.event('message', async ({ event }) => {
     try {
-      // Handle message edits
+      // Only handle message_changed and message_deleted events, ignore regular messages
       if (event.subtype === 'message_changed' && event.channel === slackChannelId) {
         const message = event.message;
         if (message.user === slackBotUserId) return;
@@ -350,8 +368,6 @@ async function init() {
           }
         }
       }
-      
-      // Handle message deletes
       else if (event.subtype === 'message_deleted' && event.channel === slackChannelId) {
         const mmPostId = await getSlackToMm(event.previous_message.ts);
         if (mmPostId) {
@@ -363,6 +379,7 @@ async function init() {
           }
         }
       }
+      // Explicitly ignore other subtypes and regular messages (no subtype)
     } catch (err) {
       console.error('Error processing Slack event:', err.message);
     }
