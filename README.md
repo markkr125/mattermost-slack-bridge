@@ -98,7 +98,7 @@ brew services start redis
 
 # Ubuntu/Debian
 sudo apt-get install redis-server
-sudo service redis-server start
+sudo service redis start
 
 # Verify it's running
 redis-cli ping  # Should return "PONG"

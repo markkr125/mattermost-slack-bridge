@@ -269,8 +269,11 @@ async function init() {
   // Set up Slack message listener for new messages
   slackApp.message(async ({ message }) => {
     try {
-      // Skip bot messages, system messages, and messages with subtypes (handled by event listener)
-      if (message.channel !== slackChannelId || !message.user || message.user === slackBotUserId || message.subtype) return;
+      // Guard conditions for message filtering
+      if (message.channel !== slackChannelId) return; // Wrong channel
+      if (!message.user) return; // No user (system messages, etc.)
+      if (message.user === slackBotUserId) return; // Skip our own messages
+      if (message.subtype) return; // Skip messages with subtypes (handled by event listener)
 
       let userName = 'Unknown User';
       let avatarUrl = '';
@@ -356,8 +359,10 @@ async function init() {
       
       // Only handle message_changed and message_deleted events
       if (event.subtype === 'message_changed' && event.channel === slackChannelId) {
+        // Check message exists before accessing its properties
+        if (!event.message) return;
         const message = event.message;
-        if (message.user === slackBotUserId) return;
+        if (!message.user || message.user === slackBotUserId) return;
         
         const mmPostId = await getSlackToMm(message.ts);
         if (mmPostId) {
@@ -372,6 +377,8 @@ async function init() {
         }
       }
       else if (event.subtype === 'message_deleted' && event.channel === slackChannelId) {
+        // Check previous_message exists before accessing its properties
+        if (!event.previous_message) return;
         const mmPostId = await getSlackToMm(event.previous_message.ts);
         if (mmPostId) {
           try {
