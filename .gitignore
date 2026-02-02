@@ -3,3 +3,6 @@ node_modules
 
 # Environment variables, never commit this file
 .env 
+
+# Test files
+test-markdown.js

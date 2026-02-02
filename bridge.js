@@ -86,6 +86,73 @@ async function getMmToSlack(mmId) {
   }
 }
 
+// Markdown conversion functions
+function convertMattermostToSlack(text) {
+  if (!text) return text;
+  
+  let converted = text;
+  
+  // Convert strikethrough first: ~~text~~ -> ~text~
+  converted = converted.replace(/~~(.+?)~~/g, '~$1~');
+  
+  // Convert bold and italic in a single pass to avoid conflicts
+  // Use placeholders to protect converted text
+  const placeholders = [];
+  
+  // First handle **bold** -> *bold* and store with placeholder
+  converted = converted.replace(/\*\*(.+?)\*\*/g, (match, p1) => {
+    const placeholder = `\x00BOLD${placeholders.length}\x00`;
+    placeholders.push(`*${p1}*`);
+    return placeholder;
+  });
+  
+  // Then handle *italic* -> _italic_
+  converted = converted.replace(/\*(.+?)\*/g, '_$1_');
+  
+  // Restore bold placeholders
+  converted = converted.replace(/\x00BOLD(\d+)\x00/g, (match, index) => {
+    return placeholders[parseInt(index)];
+  });
+  
+  // Convert links: [text](url) -> <url|text>
+  converted = converted.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<$2|$1>');
+  
+  return converted;
+}
+
+function convertSlackToMattermost(text) {
+  if (!text) return text;
+  
+  let converted = text;
+  
+  // Convert channel mentions first: <#CHANNEL_ID|name> -> ~name
+  converted = converted.replace(/<#[^|>]+\|([^>]+)>/g, '~$1');
+  
+  // Convert channel mentions without name: <#CHANNEL_ID> -> #CHANNEL_ID
+  converted = converted.replace(/<#([^>]+)>/g, '#$1');
+  
+  // Convert Slack links: <url|text> -> [text](url)
+  converted = converted.replace(/<([^|>]+)\|([^>]+)>/g, '[$2]($1)');
+  
+  // Convert Slack links without text: <url> -> url
+  converted = converted.replace(/<(https?:\/\/[^>]+)>/g, '$1');
+  
+  // Convert strikethrough: ~text~ -> ~~text~~
+  converted = converted.replace(/(?<!~)~([^~\n]+?)~(?!~)/g, '~~$1~~');
+  
+  // Convert bold: *text* -> **text**
+  // Need to be careful not to affect italic or lists
+  converted = converted.replace(/(?<![*\s])\*([^*\n]+?)\*(?![*])/g, '**$1**');
+  
+  // Convert italic: _text_ -> *text* (Mattermost supports both, but * is more common)
+  converted = converted.replace(/(?<!_)_([^_\n]+?)_(?!_)/g, '*$1*');
+  
+  // Convert user mentions: <@USER_ID> -> @USER_ID (simplified)
+  converted = converted.replace(/<@([^>]+)>/g, '@$1');
+  
+  return converted;
+}
+
 let slackBotUserId;
 let mmBotUserId;
 
@@ -130,19 +197,22 @@ async function init() {
         console.error('Error fetching MM user avatar:', err.message);
       }
 
+        // Convert Mattermost markdown to Slack markdown
+        const convertedMessage = convertMattermostToSlack(post.message);
+
         let blocks = [
           {
             "type": "section",
             "text": {
               "type": "mrkdwn",
-              "text": post.message
+              "text": convertedMessage
             }
           }
         ];
         
       const slackMessage = {
         channel: slackChannelId,
-        text: post.message,
+        text: convertedMessage,
         blocks,
         username: event.data.sender_name,  // Override display name
         icon_url: iconUrl,  // Override avatar (requires chat:write.customize scope)
@@ -209,16 +279,19 @@ async function init() {
         const slackTs = await getMmToSlack(post.id);
         if (slackTs) {
           try {
+            // Convert Mattermost markdown to Slack markdown
+            const convertedMessage = convertMattermostToSlack(post.message);
+            
             await slackApp.client.chat.update({
               channel: slackChannelId,
               ts: slackTs,
-              text: post.message,
+              text: convertedMessage,
               blocks: [
                 {
                   "type": "section",
                   "text": {
                     "type": "mrkdwn",
-                    "text": post.message
+                    "text": convertedMessage
                   }
                 }
               ]
@@ -285,7 +358,8 @@ async function init() {
       }
       
   
-    let text = message.text;  // No need for [From Slack] prefix if overriding
+    // Convert Slack markdown to Mattermost markdown
+    let text = convertSlackToMattermost(message.text);
     const mmPost = {
       channel_id: mmChannelId,
       message: text,
@@ -366,8 +440,11 @@ async function init() {
         const mmPostId = await getSlackToMm(message.ts);
         if (mmPostId) {
           try {
+            // Convert Slack markdown to Mattermost markdown
+            const convertedMessage = convertSlackToMattermost(message.text);
+            
             await mmApi.put(`/posts/${mmPostId}/patch`, {
-              message: message.text
+              message: convertedMessage
             });
             console.log(`Updated MM post ${mmPostId} from Slack edit`);
           } catch (err) {
