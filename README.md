@@ -1,103 +1,357 @@
-# Mattermost-slack-bridge
-> Experimental bridge between mattermost and slack (not affiliated with mattermost or slack).
+# Mattermost-Slack Bridge
 
-The following features are currently supported, but limited to one channel at the moment:
-- Chats in channels work
-- Threads work
-- File sharing should also work
+> An experimental bidirectional bridge connecting Mattermost and Slack channels. Not affiliated with Mattermost or Slack.
 
-What does not work (and will not work):
-- Direct messages
-- Huddles
+[![License: ISC](https://img.shields.io/badge/License-ISC-blue.svg)](https://opensource.org/licenses/ISC)
 
-## Todo
-- ~~Better error handling, do not crash on errors~~ ✅ Completed
-- Threads are currently tracked in RAM, it needs to be in some sort external process (Redis?)
-- Support more than one channel, allow some sort of channel mapping.
-- Editing/Delete messages needs to be implemented
+---
 
-# Installation
+## 📋 Table of Contents
 
-1. Clone this repository:
+- [Features](#-features)
+- [Quick Start](#-quick-start)
+- [Prerequisites](#-prerequisites)
+- [Installation](#-installation)
+- [Configuration](#-configuration)
+  - [Redis Setup](#redis-setup)
+  - [Slack App Configuration](#slack-app-configuration)
+  - [Mattermost Bot Configuration](#mattermost-bot-configuration)
+- [Usage](#-usage)
+- [Troubleshooting](#-troubleshooting)
+- [Roadmap](#-roadmap)
+- [Contributing](#-contributing)
+
+---
+
+## ✨ Features
+
+### Supported ✅
+- **Bidirectional messaging** between Slack and Mattermost channels
+- **Thread support** - replies stay organized in threads
+- **File sharing** - attachments sync between platforms
+- **Message editing** - edits propagate to the other platform
+- **Message deletion** - deletions sync bidirectionally
+- **Username & avatar preservation** - see who sent each message
+- **Persistent message mapping** - using Redis with configurable expiry (default: 6 months)
+- **Auto-reconnection** - WebSocket reconnects automatically on disconnect
+
+### Not Supported ❌
+- Direct messages (DMs)
+- Huddles/voice channels
+- Multiple channel pairs (currently supports one channel pair)
+
+---
+
+## 🚀 Quick Start
+
+```bash
+# Clone the repository
+git clone https://github.com/markkr125/mattermost-slack-bridge.git
+cd mattermost-slack-bridge
+
+# Install dependencies
+npm install
+
+# Set up Redis (required)
+# On macOS: brew install redis && brew services start redis
+# On Ubuntu: sudo apt-get install redis-server && sudo service redis start
+# On Docker: docker run -d -p 6379:6379 redis:alpine
+
+# Configure environment
+cp .env.example .env
+# Edit .env with your settings
+
+# Start the bridge
+npm start
+```
+
+---
+
+## 📦 Prerequisites
+
+- **Node.js** 14 or higher
+- **Redis** server (for persistent message mapping)
+- **Slack** workspace admin access to create an app
+- **Mattermost** instance with admin access
+
+---
+
+## 🔧 Installation
+
+### 1. Clone & Install
+
 ```bash
 git clone https://github.com/markkr125/mattermost-slack-bridge.git
 cd mattermost-slack-bridge
-```
-
-2. Install dependencies:
-```bash
 npm install
 ```
 
-3. Copy `.env.example` to `.env` and configure your settings:
+### 2. Set Up Redis
+
+The bridge requires Redis to store message mappings persistently.
+
+**Option A: Local Redis**
+```bash
+# macOS
+brew install redis
+brew services start redis
+
+# Ubuntu/Debian
+sudo apt-get install redis-server
+sudo service redis-server start
+
+# Verify it's running
+redis-cli ping  # Should return "PONG"
+```
+
+**Option B: Docker**
+```bash
+docker run -d --name redis -p 6379:6379 redis:alpine
+```
+
+**Option C: Cloud Redis** (RedisLabs, AWS ElastiCache, etc.)
+- Use the connection URL provided by your service
+
+### 3. Configure Environment
+
 ```bash
 cp .env.example .env
 ```
 
-4. Fill in the required values in `.env` (see configuration sections below)
+Edit `.env` with your credentials (see [Configuration](#-configuration) section below).
 
-5. Run the bridge:
-```bash
-node bridge.js
-```
+---
 
-# Configure the Slack App
-## OAuth & Permissions
-- In the app dashboard, go to OAuth & Permissions in the left sidebar.
-- Under Bot Token Scopes, click Add an OAuth Scope.
-- Add the following scopes (required for the bridge code):
-    - chat:write (Send messages as your app)
-    - chat:write.customize (Send messages as your app with a customized username and avatar)
-    - files:read (View files shared in channels and conversations that your app has been added to)
-    - groups:history (View messages and other content in private channels that your app has been added to)
-    - groups:read (View basic information about private channels that your app has been added to)
-    - groups:write (Manage private channels that your app has been added to and create new ones)
-    - users:read (View people in a workspace)
-- Save changes.
+## ⚙️ Configuration
 
-## Enable Event Subscriptions
- - Go to Event Subscriptions in the left sidebar.
- - Toggle Enable Events to On.
- - In the Request URL field, enter your server's public URL, e.g., http://your-server:3000/slack/events.
-    - Note: Your server must be publicly accessible (use ngrok or a similar tool for local testing to expose localhost:3000 to the internet).
-    - Slack will send a verification challenge to this URL. Ensure your server (from the provided bridge.js) is running to respond to it.
- - Under Subscribe to bot events, click Add Bot User Event and select:
-    - message.channels (to listen for messages in public channels).
-- Save changes. Slack will verify the Request URL; if it fails, check that your server is running and accessible.
+### Redis Setup
 
-## Install the App to Your Workspace
-- Go to OAuth & Permissions > Install App to Workspace.
-- Authorize the app in your Slack workspace.
-- After installation, copy the Bot User OAuth Token (starts with xoxb-). This is your SLACK_BOT_TOKEN for the .env file.
+Add Redis connection details to your `.env` file:
 
-## Get the Signing Secret
-- Go to Basic Information in the left sidebar.
-- Under App Credentials, copy the Signing Secret. This is your SLACK_SIGNING_SECRET for the .env file.
-
-## Get Slack Channel ID:
-- In Slack, right-click the channel you want to bridge, select View channel details, and copy the Channel ID (e.g., C0123456789) from the bottom. Add it to .env as SLACK_CHANNEL_ID.
-
-# Configure mattermost bot
-## Enable Personal Access Tokens
-- Go to System Console (accessible via the menu in the top-left corner as a system admin) > Integrations > Integration Management.
-- Ensure Enable Personal Access Tokens is set to true. This allows bots to authenticate using tokens.
-- Save changes.
-
-## Create a Bot Account
-- Under System Console > Integrations > Bot Accounts, and make sure bot accounts are enabled.
-- After that go out of the System Console, and go to Integrations console, on the left side select Bot Accounts.
-- Click Create Bot Account.
-   - The bot needs to have "post:all" permission enabled.
-- Copy the Bot Token
-- This is your MM_TOKEN for the .env file
 ```env
-MM_TOKEN=your-bot-token
+REDIS_URL=redis://localhost:6379
+REDIS_EXPIRY_DAYS=180  # Default: 6 months
 ```
-## Configure usernames and picture override 
-For the username and profile picture from slack to show up on mattermost:
-- Go to System Console > Integrations > Integration Management.
-- Enable **Enable integrations to override usernames**.
-- Enable **Enable integrations to override profile picture icons**.
+
+**Configuration Options:**
+- `REDIS_URL`: Connection string for your Redis instance
+- `REDIS_EXPIRY_DAYS`: How long to keep message mappings (default: 180 days)
+
+---
+
+### Slack App Configuration
+
+#### Step 1: Create a Slack App
+
+1. Go to [https://api.slack.com/apps](https://api.slack.com/apps)
+2. Click **Create New App** → **From scratch**
+3. Name your app (e.g., "Mattermost Bridge") and select your workspace
+
+#### Step 2: Configure OAuth & Permissions
+
+1. Navigate to **OAuth & Permissions** in the sidebar
+2. Scroll to **Bot Token Scopes** and add these scopes:
+
+   | Scope | Purpose |
+   |-------|---------|
+   | `chat:write` | Send messages |
+   | `chat:write.customize` | Use custom usernames and avatars |
+   | `files:read` | Access shared files |
+   | `channels:history` | Read channel messages |
+   | `channels:read` | View channel info |
+   | `users:read` | Get user profiles |
+
+3. Click **Install to Workspace** at the top
+4. **Copy the Bot User OAuth Token** (starts with `xoxb-`) → This is your `SLACK_BOT_TOKEN`
+
+#### Step 3: Enable Event Subscriptions
+
+1. Go to **Event Subscriptions** in the sidebar
+2. Toggle **Enable Events** to **On**
+3. Set **Request URL** to: `http://your-server:3000/slack/events`
+   - For local development, use [ngrok](https://ngrok.com/): `ngrok http 3000`
+   - Your server must be running for Slack to verify this URL
+4. Under **Subscribe to bot events**, add:
+   - `message.channels` - Listen for channel messages
+
+5. **Save Changes**
+
+#### Step 4: Get Additional Credentials
+
+- **Signing Secret**: Go to **Basic Information** → **App Credentials** → Copy the **Signing Secret**
+- **Channel ID**: 
+  1. Open Slack, right-click your target channel
+  2. Select **View channel details**
+  3. Scroll to the bottom and copy the **Channel ID** (e.g., `C0123456789`)
+
+Add these to your `.env`:
+```env
+SLACK_BOT_TOKEN=xoxb-your-token-here
+SLACK_SIGNING_SECRET=your-signing-secret
+SLACK_CHANNEL_ID=C0123456789
+```
+
+---
+
+### Mattermost Bot Configuration
+
+#### Step 1: Enable Bot Accounts & Integrations
+
+1. Log in to Mattermost as **System Admin**
+2. Go to **System Console** → **Integrations** → **Integration Management**
+3. Enable the following settings:
+   - ✅ **Enable Bot Accounts**
+   - ✅ **Enable Personal Access Tokens**
+   - ✅ **Enable integrations to override usernames**
+   - ✅ **Enable integrations to override profile picture icons**
+
+#### Step 2: Create a Bot Account
+
+1. Exit System Console and go to **Main Menu** → **Integrations**
+2. Select **Bot Accounts** → **Add Bot Account**
+3. Configure the bot:
+   - **Username**: e.g., `slack-bridge`
+   - **Display Name**: e.g., `Slack Bridge`
+   - **Role**: Enable **post:all** permission
+4. Click **Create Bot Account**
+5. **Copy the Access Token** → This is your `MM_TOKEN`
+
+#### Step 3: Get Channel ID
+
+1. Open the channel you want to bridge
+2. Click the channel name → **View Info**
+3. The URL will show the channel ID (e.g., `abcde12345`)
+   - Example: `https://your.mattermost.com/team/channels/abcde12345`
+
+Add these to your `.env`:
+```env
+MM_TOKEN=your-mattermost-token
+MM_URL=https://your.mattermost.com
+MM_CHANNEL_ID=abcde12345
+```
+
+---
+
+## 🎯 Usage
+
+### Starting the Bridge
+
+```bash
+npm start
+```
+
+You should see:
+```
+Redis connected
+Mattermost WebSocket connected
+Bridge running on port 3000
+```
+
+### Testing the Connection
+
+1. Send a message in your Slack channel → should appear in Mattermost
+2. Send a message in Mattermost → should appear in Slack
+3. Edit a message on either platform → edit syncs to the other
+4. Delete a message → deletion syncs bidirectionally
+
+---
+
+## 🔍 Troubleshooting
+
+### Redis Connection Issues
+
+**Error: `Redis connection refused`**
+```bash
+# Check if Redis is running
+redis-cli ping
+
+# If not running:
+# macOS: brew services start redis
+# Linux: sudo service redis-server start
+# Docker: docker start redis
+```
+
+### Slack Event Subscriptions Failing
+
+**Error: `url_verification failed`**
+- Ensure your bridge is running before setting up the Request URL
+- For local development, use ngrok: `ngrok http 3000`
+- Check that PORT in `.env` matches your server port
+
+### Messages Not Syncing
+
+1. **Check logs** for error messages
+2. **Verify bot permissions**:
+   - Slack bot is added to the channel
+   - Mattermost bot has access to the channel
+3. **Check Redis**:
+   ```bash
+   redis-cli
+   > KEYS *  # Should show stored message mappings
+   ```
+
+### WebSocket Disconnects
+
+The bridge automatically reconnects after 5 seconds. If it keeps disconnecting:
+- Check your Mattermost server status
+- Verify `MM_TOKEN` is valid and hasn't expired
+- Check firewall settings
+
+---
+
+## 🗺️ Roadmap
+
+### Completed ✅
+- ~~Better error handling~~
+- ~~Persistent message storage with Redis~~
+- ~~Edit/delete message support~~
+
+### Planned 🚧
+- Support multiple channel pairs
+- Advanced channel mapping configuration
+- Reaction synchronization
+- Better logging and monitoring
+- Docker deployment option
+
+---
+
+## 🤝 Contributing
+
+Contributions are welcome! Please feel free to submit issues or pull requests.
+
+### Development Setup
+
+```bash
+git clone https://github.com/markkr125/mattermost-slack-bridge.git
+cd mattermost-slack-bridge
+npm install
+cp .env.example .env
+# Edit .env with your test credentials
+npm start
+```
+
+---
+
+## 📄 License
+
+ISC License - see LICENSE file for details
+
+---
+
+## 🙋 Support
+
+If you encounter issues:
+1. Check the [Troubleshooting](#-troubleshooting) section
+2. Review existing [GitHub Issues](https://github.com/markkr125/mattermost-slack-bridge/issues)
+3. Open a new issue with:
+   - Bridge version
+   - Node.js version
+   - Error logs
+   - Steps to reproduce
+
+---
+
+**Note**: This is an experimental project and not officially supported by Mattermost or Slack.
 
 
 
