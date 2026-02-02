@@ -93,21 +93,21 @@ function convertMattermostToSlack(text) {
   let converted = text;
   
   // Convert strikethrough first: ~~text~~ -> ~text~
-  converted = converted.replace(/~~(.+?)~~/g, '~$1~');
+  converted = converted.replace(/~~([^~\n]+?)~~/g, '~$1~');
   
   // Convert bold and italic in a single pass to avoid conflicts
   // Use placeholders to protect converted text
   const placeholders = [];
   
   // First handle **bold** -> *bold* and store with placeholder
-  converted = converted.replace(/\*\*(.+?)\*\*/g, (match, p1) => {
+  converted = converted.replace(/\*\*([^*\n]+?)\*\*/g, (match, p1) => {
     const placeholder = `\x00BOLD${placeholders.length}\x00`;
     placeholders.push(`*${p1}*`);
     return placeholder;
   });
   
   // Then handle *italic* -> _italic_
-  converted = converted.replace(/\*(.+?)\*/g, '_$1_');
+  converted = converted.replace(/\*([^*\n]+?)\*/g, '_$1_');
   
   // Restore bold placeholders
   converted = converted.replace(/\x00BOLD(\d+)\x00/g, (match, index) => {
