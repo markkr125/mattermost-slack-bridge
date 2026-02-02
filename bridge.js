@@ -269,8 +269,8 @@ async function init() {
   // Set up Slack message listener for new messages
   slackApp.message(async ({ message }) => {
     try {
-      // Skip bot messages, and only process regular messages without subtype
-      if (message.channel !== slackChannelId || message.user === slackBotUserId) return;
+      // Skip bot messages, system messages, and messages with subtypes (handled by event listener)
+      if (message.channel !== slackChannelId || !message.user || message.user === slackBotUserId || message.subtype) return;
 
       let userName = 'Unknown User';
       let avatarUrl = '';
@@ -351,7 +351,10 @@ async function init() {
   // Set up Slack event listener for message changes and deletes only
   slackApp.event('message', async ({ event }) => {
     try {
-      // Only handle message_changed and message_deleted events, ignore regular messages
+      // Explicitly ignore messages without subtypes (regular messages handled by message listener)
+      if (!event.subtype) return;
+      
+      // Only handle message_changed and message_deleted events
       if (event.subtype === 'message_changed' && event.channel === slackChannelId) {
         const message = event.message;
         if (message.user === slackBotUserId) return;
