@@ -2,8 +2,6 @@
 
 > An experimental bidirectional bridge connecting Mattermost and Slack channels. Not affiliated with Mattermost or Slack.
 
-[![License: ISC](https://img.shields.io/badge/License-ISC-blue.svg)](https://opensource.org/licenses/ISC)
-
 ---
 
 ## 📋 Table of Contents
@@ -329,13 +327,6 @@ cp .env.example .env
 # Edit .env with your test credentials
 npm start
 ```
-
----
-
-## 📄 License
-
-ISC License - see LICENSE file for details
-
 ---
 
 ## 🙋 Support
