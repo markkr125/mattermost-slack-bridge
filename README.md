@@ -352,12 +352,3 @@ If you encounter issues:
 ---
 
 **Note**: This is an experimental project and not officially supported by Mattermost or Slack.
-
-
-
-
-
-
-
-
-

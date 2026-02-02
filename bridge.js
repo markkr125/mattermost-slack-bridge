@@ -113,7 +113,6 @@ async function init() {
   ws.on('message', async (data) => {
     try {
       const event = JSON.parse(data.toString());
-      
       // Handle new posts
       if (event.event === 'posted') {
         const post = JSON.parse(event.data.post);
