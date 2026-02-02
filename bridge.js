@@ -218,7 +218,7 @@ async function init() {
             // Upload to Mattermost
             const formData = new FormData();
             formData.append('channel_id', mmChannelId);
-            formData.append('files', fileBuffer, fileName);
+            formData.append('files', fileBuffer, { filename: fileName });
 
             const uploadResponse = await mmApi.post('/files', formData, {
               headers: formData.getHeaders()
