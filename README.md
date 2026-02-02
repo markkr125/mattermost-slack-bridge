@@ -1,7 +1,7 @@
 # Mattermost-slack-bridge
-> Experimental bride between mattermost and slack (not affiliated with mattermost or slack).
+> Experimental bridge between mattermost and slack (not affiliated with mattermost or slack).
 
-The following features are currently supported, but limited to oner channel at the moment:
+The following features are currently supported, but limited to one channel at the moment:
 - Chats in channels work
 - Threads work
 - File sharing should also work
@@ -11,10 +11,35 @@ What does not work (and will not work):
 - Huddles
 
 ## Todo
-- Better error handling, do not crash on errors
+- ~~Better error handling, do not crash on errors~~ ✅ Completed
 - Threads are currently tracked in RAM, it needs to be in some sort external process (Redis?)
-- Support more then one channel, allow some sort of channel mapping.
+- Support more than one channel, allow some sort of channel mapping.
 - Editing/Delete messages needs to be implemented
+
+# Installation
+
+1. Clone this repository:
+```bash
+git clone https://github.com/markkr125/mattermost-slack-bridge.git
+cd mattermost-slack-bridge
+```
+
+2. Install dependencies:
+```bash
+npm install
+```
+
+3. Copy `.env.example` to `.env` and configure your settings:
+```bash
+cp .env.example .env
+```
+
+4. Fill in the required values in `.env` (see configuration sections below)
+
+5. Run the bridge:
+```bash
+node bridge.js
+```
 
 # Configure the Slack App
 ## OAuth & Permissions
@@ -60,7 +85,7 @@ What does not work (and will not work):
 
 ## Create a Bot Account
 - Under System Console > Integrations > Bot Accounts, and make sure bot accounts are enabled.
-- After that got out of the System Console, and got to0 Integrations console, on the left side select Bot Accounts.
+- After that go out of the System Console, and go to Integrations console, on the left side select Bot Accounts.
 - Click Create Bot Account.
    - The bot needs to have "post:all" permission enabled.
 - Copy the Bot Token
@@ -68,8 +93,8 @@ What does not work (and will not work):
 ```env
 MM_TOKEN=your-bot-token
 ```
-## Configure usernames and picture overwride 
-For the username and profile picture from slack to showup on mattermost:
+## Configure usernames and picture override 
+For the username and profile picture from slack to show up on mattermost:
 - Go to System Console > Integrations > Integration Management.
 - Enable **Enable integrations to override usernames**.
 - Enable **Enable integrations to override profile picture icons**.
