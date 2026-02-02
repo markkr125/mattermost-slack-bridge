@@ -138,13 +138,15 @@ function convertSlackToMattermost(text) {
   converted = converted.replace(/<(https?:\/\/[^>]+)>/g, '$1');
   
   // Convert strikethrough: ~text~ -> ~~text~~
+  // Use negative lookbehind to avoid matching already doubled tildes (requires Node.js 9.0+)
   converted = converted.replace(/(?<!~)~([^~\n]+?)~(?!~)/g, '~~$1~~');
   
   // Convert bold: *text* -> **text**
-  // Need to be careful not to affect italic or lists
+  // Use negative lookbehind to avoid list markers (requires Node.js 9.0+)
   converted = converted.replace(/(?<![*\s])\*([^*\n]+?)\*(?![*])/g, '**$1**');
   
-  // Convert italic: _text_ -> *text* (Mattermost supports both, but * is more common)
+  // Convert italic: _text_ -> *text*
+  // Use negative lookbehind to avoid matching already doubled underscores (requires Node.js 9.0+)
   converted = converted.replace(/(?<!_)_([^_\n]+?)_(?!_)/g, '*$1*');
   
   // Convert user mentions: <@USER_ID> -> @USER_ID (simplified)

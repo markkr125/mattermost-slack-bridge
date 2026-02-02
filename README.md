@@ -69,7 +69,7 @@ npm start
 
 ## 📦 Prerequisites
 
-- **Node.js** 14 or higher
+- **Node.js** 14 or higher (required for ES6 features and regex lookbehinds)
 - **Redis** server (for persistent message mapping)
 - **Slack** workspace admin access to create an app
 - **Mattermost** instance with admin access
