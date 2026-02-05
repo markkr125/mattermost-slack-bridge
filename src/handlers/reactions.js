@@ -3,6 +3,7 @@
 const { setReactionMapping, getReactionMapping } = require('../storage/redis');
 const { slackToMmChannelMap, mmToSlackChannelMap } = require('../config/environment');
 const { createContextLogger } = require('../utils/logger');
+const { getCustomEmojiUrl, isCustomEmoji } = require('../utils/emoji-sync');
 
 const log = createContextLogger('reactions');
 
@@ -33,11 +34,51 @@ const emojiTranslations = {
 };
 
 function translateEmojiForMattermost(slackEmoji) {
+  // Check if it's a custom emoji first
+  if (isCustomEmoji(slackEmoji)) {
+    log.debug('Detected custom Slack emoji', { emojiName: slackEmoji });
+    // For custom emojis, we'll need to handle them specially in MM
+    return slackEmoji;
+  }
   return emojiTranslations.slackToMm[slackEmoji] || slackEmoji;
 }
 
 function translateEmojiForSlack(mmEmoji) {
   return emojiTranslations.mmToSlack[mmEmoji] || mmEmoji;
+}
+
+/**
+ * Create a custom emoji in Mattermost if needed
+ * @param {Object} mmApi - Mattermost API client
+ * @param {string} emojiName - Name of the emoji
+ * @returns {Promise<boolean>} True if emoji exists or was created
+ */
+async function ensureCustomEmojiInMattermost(mmApi, emojiName) {
+  try {
+    const emojiUrl = getCustomEmojiUrl(emojiName);
+    if (!emojiUrl) {
+      return false;
+    }
+
+    // Check if emoji already exists in Mattermost
+    try {
+      await mmApi.get(`/emoji/name/${emojiName}`);
+      log.debug('Custom emoji already exists in Mattermost', { emojiName });
+      return true;
+    } catch (err) {
+      // Emoji doesn't exist, need to create it
+      log.debug('Custom emoji not found in Mattermost, would need to create', { emojiName });
+      // Note: Creating custom emojis in MM requires image upload which is complex
+      // For now, we'll just log that we detected a custom emoji
+      return false;
+    }
+  } catch (error) {
+    log.error('Error checking custom emoji in Mattermost', { 
+      error: error.message,
+      emojiName 
+    });
+    return false;
+  }
 }
 
 /**
@@ -68,6 +109,14 @@ async function handleSlackReactionAdd(slackClient, mmApi, eventData) {
     
     const translatedEmoji = translateEmojiForMattermost(reaction);
     
+    // Log if this is a custom emoji
+    if (isCustomEmoji(reaction)) {
+      log.info('Processing custom Slack emoji reaction', { 
+        emojiName: reaction,
+        emojiUrl: getCustomEmojiUrl(reaction)
+      });
+    }
+    
     await mmApi.post('/reactions', {
       user_id: mmBotId,
       post_id: mmPostId,
@@ -77,7 +126,8 @@ async function handleSlackReactionAdd(slackClient, mmApi, eventData) {
     log.info('Synced reaction from Slack to MM', { 
       emoji: reaction, 
       translatedTo: translatedEmoji,
-      mmPostId 
+      mmPostId,
+      isCustom: isCustomEmoji(reaction)
     });
   } catch (error) {
     log.error('Failed to sync Slack reaction to MM', { 

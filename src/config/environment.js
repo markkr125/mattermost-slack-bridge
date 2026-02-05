@@ -90,6 +90,10 @@ const config = {
     enabled: process.env.PRESENCE_SYNC_ENABLED === 'true',
     syncIntervalMinutes: parseInt(process.env.PRESENCE_SYNC_INTERVAL_MINUTES || '5', 10),
   },
+  emoji: {
+    syncEnabled: process.env.CUSTOM_EMOJI_SYNC_ENABLED !== 'false', // Default to true
+    syncIntervalMinutes: parseInt(process.env.CUSTOM_EMOJI_SYNC_INTERVAL_MINUTES || '60', 10),
+  },
   port: process.env.PORT || 3000,
 };
 
