@@ -6,3 +6,12 @@ node_modules
 
 # Test files
 test-markdown.js
+
+# Test coverage
+coverage/
+
+# Log files
+*.log
+
+# macOS
+.DS_Store
