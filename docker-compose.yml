@@ -1,0 +1,60 @@
+version: '3.9'
+
+networks:
+  bridge-network:
+    driver: bridge
+
+volumes:
+  redis-persistence:
+    driver: local
+
+services:
+  redis-store:
+    image: redis:7-alpine
+    container_name: bridge-redis
+    networks:
+      - bridge-network
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-persistence:/data
+    command: redis-server --appendonly yes --appendfsync everysec
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
+  bridge-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: mattermost-slack-bridge
+    networks:
+      - bridge-network
+    ports:
+      - "${PORT:-3000}:3000"
+    environment:
+      SLACK_BOT_TOKEN: ${SLACK_BOT_TOKEN}
+      SLACK_SIGNING_SECRET: ${SLACK_SIGNING_SECRET}
+      MM_TOKEN: ${MM_TOKEN}
+      MM_URL: ${MM_URL}
+      SLACK_CHANNEL_ID: ${SLACK_CHANNEL_ID:-}
+      MM_CHANNEL_ID: ${MM_CHANNEL_ID:-}
+      CHANNEL_MAPPINGS: ${CHANNEL_MAPPINGS:-}
+      PORT: 3000
+      REDIS_URL: redis://redis-store:6379
+      REDIS_EXPIRY_DAYS: ${REDIS_EXPIRY_DAYS:-180}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    depends_on:
+      redis-store:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/health', (res) => {process.exit(res.statusCode === 200 ? 0 : 1)})"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
