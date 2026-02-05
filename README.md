@@ -2,6 +2,13 @@
 
 > An experimental bidirectional bridge connecting Mattermost and Slack channels. Not affiliated with Mattermost or Slack.
 
+## 📚 Documentation
+
+- **[Architecture](docs/architecture.md)** - System design and component overview
+- **[API Reference](docs/api.md)** - Module and function documentation
+- **[Development Guide](docs/development.md)** - Local setup and testing
+- **[Deployment Guide](docs/deployment.md)** - Production deployment strategies
+
 ---
 
 ## 📋 Table of Contents
@@ -371,6 +378,35 @@ cp .env.example .env
 # Edit .env with your test credentials
 npm start
 ```
+
+For detailed development instructions, see [Development Guide](docs/development.md).
+
+### Running Tests
+
+```bash
+npm test                 # Run all tests
+npm run test:watch      # Run tests in watch mode
+npm run test:coverage   # Run tests with coverage report
+```
+
+### Project Structure
+
+The project has been refactored into a modular structure:
+
+```
+src/
+├── config/          # Configuration management
+├── handlers/        # Message handlers for Slack and Mattermost
+├── storage/         # Redis storage layer
+├── utils/           # Utility functions (markdown conversion)
+└── index.js         # Main application entry point
+
+__tests__/           # Jest unit tests
+docs/                # Documentation
+```
+
+See [Architecture Documentation](docs/architecture.md) for more details.
+
 ---
 
 ## 🙋 Support
