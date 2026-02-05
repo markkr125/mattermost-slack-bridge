@@ -115,11 +115,13 @@ describe('Environment Configuration', () => {
       process.env.CHANNEL_MAPPINGS = '[{"slack":"C12345","mattermost":"mm12345"}]';
       delete process.env.REDIS_URL;
       delete process.env.REDIS_EXPIRY_DAYS;
+      delete process.env.STORAGE_BACKEND;
       
       const { config } = require('../../src/config/environment');
       
-      expect(config.redis.url).toBe('redis://localhost:6379');
-      expect(config.redis.expiryDays).toBe(180);
+      expect(config.storage.url).toBe('redis://localhost:6379');
+      expect(config.storage.expiryDays).toBe(180);
+      expect(config.storage.backend).toBe('redis');
     });
 
     test('should use custom Redis configuration when provided', () => {
@@ -129,8 +131,8 @@ describe('Environment Configuration', () => {
       
       const { config } = require('../../src/config/environment');
       
-      expect(config.redis.url).toBe('redis://custom:6379');
-      expect(config.redis.expiryDays).toBe(365);
+      expect(config.storage.url).toBe('redis://custom:6379');
+      expect(config.storage.expiryDays).toBe(365);
     });
 
     test('should load port configuration with default', () => {
