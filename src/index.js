@@ -44,6 +44,7 @@ const {
 const { 
   startPeriodicEmojiSync 
 } = require('./utils/emoji-sync');
+const { getShardHealth } = require('./utils/sharding');
 const { setReactionMapping } = require('./storage/redis');
 const {
   setConnectionStatus,
@@ -292,10 +293,12 @@ init().catch(err => {
 
 // Add health check endpoint for monitoring
 app.get('/health', (req, res) => {
+  const shardHealth = getShardHealth();
   res.status(200).json({ 
     status: 'operational', 
     service: 'mattermost-slack-bridge',
-    timestamp: new Date().toISOString() 
+    timestamp: new Date().toISOString(),
+    shard: shardHealth
   });
 });
 
