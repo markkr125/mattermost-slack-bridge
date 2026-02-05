@@ -478,3 +478,290 @@ All configuration is loaded from environment variables. See [Configuration Guide
 - Mattermost to Slack: `mm:{channel_id}:{post_id}`
 
 All keys expire after the configured TTL (default: 180 days).
+
+---
+
+## New Feature Modules
+
+### Worker Pool Module (`src/utils/message-processor.js`)
+
+Concurrent message processor for high-volume scenarios.
+
+#### Class: `MessageProcessor`
+
+**Constructor:**
+```javascript
+new MessageProcessor(options)
+```
+
+**Parameters:**
+- `options.maxConcurrent` (number): Maximum concurrent operations (default: 10)
+- `options.name` (string): Processor name for logging (default: 'default')
+
+**Methods:**
+
+##### `submit(operation)`
+
+Submit an async operation for processing.
+
+**Parameters:**
+- `operation` (Function): Async function to execute
+
+**Returns:** `Promise` - Resolves with operation result
+
+**Example:**
+```javascript
+const processor = new MessageProcessor({ maxConcurrent: 10 });
+
+const result = await processor.submit(async () => {
+  // Process message
+  return processedData;
+});
+```
+
+##### `snapshot()`
+
+Get current processor metrics.
+
+**Returns:** `Object` containing:
+- `completed` (number): Total completed tasks
+- `errors` (number): Total failed tasks  
+- `totalDurationMs` (number): Cumulative processing time
+- `currentlyRunning` (number): Currently executing tasks
+- `currentlyWaiting` (number): Queued tasks
+- `averageDurationMs` (number): Average task duration
+- `peakWaiting` (number): Maximum queue depth reached
+
+##### `awaitCompletion()`
+
+Wait for all pending operations to complete.
+
+**Returns:** `Promise` - Resolves when queue is empty
+
+##### `clearMetrics()`
+
+Reset all metrics to zero.
+
+---
+
+### Performance Monitor Module (`src/utils/perf-monitor.js`)
+
+Performance measurement and benchmarking.
+
+#### Class: `PerformanceMonitor`
+
+**Methods:**
+
+##### `begin(label)`
+
+Start a performance measurement.
+
+**Parameters:**
+- `label` (string): Measurement label
+
+**Returns:** `string` - Measurement ID
+
+##### `complete(measurementId)`
+
+Complete a performance measurement.
+
+**Parameters:**
+- `measurementId` (string): ID from `begin()`
+
+**Returns:** `Object` - Measurement data
+
+##### `track(label, asyncFn)`
+
+Measure an async function execution.
+
+**Parameters:**
+- `label` (string): Measurement label
+- `asyncFn` (Function): Async function to measure
+
+**Returns:** `Promise<Object>` - `{ output, measurement }`
+
+**Example:**
+```javascript
+const { perfMonitor } = require('./src/utils/perf-monitor');
+
+const { output, measurement } = await perfMonitor.track('process-message', async () => {
+  return await processMessage();
+});
+
+console.log(`Took ${measurement.durationMs}ms`);
+```
+
+##### `analyze(label)`
+
+Get statistics for measurements with a specific label.
+
+**Returns:** `Object` containing:
+- `sampleCount` (number): Number of measurements
+- `timing` (Object): Timing statistics (min, max, mean, median, p90, p95, p99)
+- `memory` (Object): Memory delta statistics
+
+##### `report()`
+
+Generate formatted text report of all measurements.
+
+**Returns:** `string` - Formatted report
+
+##### `reset()`
+
+Clear all measurement data.
+
+---
+
+### Slash Commands Module (`src/handlers/slash-commands.js`)
+
+Interactive bridge control via slash commands.
+
+#### Functions
+
+##### `handleSlackSlashCommand(slackApp, mmApi, command)`
+
+Process Slack slash command.
+
+**Parameters:**
+- `slackApp` (Object): Slack app instance
+- `mmApi` (Object): Mattermost API client
+- `command` (Object): Slack command payload
+
+**Returns:** `Promise<Object>` - Response object
+
+##### `handleMattermostSlashCommand(slackApp, mmApi, payload)`
+
+Process Mattermost slash command.
+
+**Parameters:**
+- `slackApp` (Object): Slack app instance
+- `mmApi` (Object): Mattermost API client
+- `payload` (Object): Mattermost command payload
+
+**Returns:** `Promise<Object>` - Status object
+
+**Supported Commands:**
+- `/bridge status` - Show bridge status
+- `/bridge stats` - Display statistics
+- `/bridge perf` - View performance metrics
+- `/bridge help` - Show help
+
+---
+
+### Presence Sync Module (`src/handlers/presence.js`)
+
+User presence/status synchronization between platforms.
+
+#### Functions
+
+##### `initializePresence(config)`
+
+Initialize presence synchronization.
+
+**Parameters:**
+- `config.enabled` (boolean): Enable presence sync
+- `config.syncIntervalMs` (number): Sync interval in milliseconds
+
+##### `handleSlackPresenceChange(slackClient, mmApi, event)`
+
+Handle Slack user presence change event.
+
+**Parameters:**
+- `slackClient` (Object): Slack client
+- `mmApi` (Object): Mattermost API client
+- `event` (Object): Slack presence_change event
+
+**Returns:** `Promise<void>`
+
+##### `handleMattermostStatusChange(slackClient, event)`
+
+Handle Mattermost user status change event.
+
+**Parameters:**
+- `slackClient` (Object): Slack client
+- `event` (Object): Mattermost status_change event
+
+**Returns:** `Promise<void>`
+
+##### `registerPresenceMapping(slackUserId, mmUserId)`
+
+Register user mapping for presence sync.
+
+**Parameters:**
+- `slackUserId` (string): Slack user ID
+- `mmUserId` (string): Mattermost user ID
+
+##### `startPeriodicSync(slackClient, mmApi)`
+
+Start periodic presence synchronization.
+
+**Parameters:**
+- `slackClient` (Object): Slack client
+- `mmApi` (Object): Mattermost API client
+
+**Returns:** `NodeJS.Timeout` - Interval timer
+
+##### `getPresenceStats()`
+
+Get presence sync statistics.
+
+**Returns:** `Object` containing:
+- `enabled` (boolean): Whether presence sync is enabled
+- `syncIntervalMs` (number): Sync interval
+- `mappedUsers` (number): Number of mapped users
+
+---
+
+## Benchmark CLI Tool
+
+### Usage
+
+```bash
+node tools/benchmark-cli.js [options]
+```
+
+### Options
+
+- `--scenario <name>` - Benchmark scenario to run (default: 'all')
+  - `message-processing` - Message processing throughput
+  - `concurrent` - Concurrent processing with worker pools
+  - `file-ops` - File operation simulation
+  - `all` - Run all benchmarks
+
+- `--iterations <n>` - Number of iterations (default: 100)
+
+- `--pool-size <n>` - Worker pool size for concurrent tests (default: 10)
+
+### Examples
+
+```bash
+# Run all benchmarks with 100 iterations
+node tools/benchmark-cli.js
+
+# Test message processing with 200 iterations
+node tools/benchmark-cli.js --scenario message-processing --iterations 200
+
+# Test concurrent processing with pool size of 20
+node tools/benchmark-cli.js --scenario concurrent --pool-size 20 --iterations 150
+```
+
+### Output
+
+The tool generates detailed performance reports including:
+- Sample count
+- Timing statistics (min, max, mean, median, P90, P95, P99)
+- Memory usage statistics
+- Full performance report
+
+---
+
+## Additional Environment Variables
+
+```env
+# Worker pool configuration
+WORKER_POOL_SIZE=10
+
+# Presence synchronization
+PRESENCE_SYNC_ENABLED=false
+PRESENCE_SYNC_INTERVAL_MINUTES=5
+```
