@@ -25,6 +25,12 @@ const {
   handleMmReactionRemove
 } = require('./handlers/reactions');
 const { setReactionMapping } = require('./storage/redis');
+const {
+  setConnectionStatus,
+  recordReconnection,
+  getMetrics,
+  getMetricsContentType,
+} = require('./metrics/metrics');
 
 const log = createContextLogger('main');
 
@@ -64,6 +70,7 @@ async function init() {
 
   ws.on('open', () => {
     log.info('Mattermost WebSocket connected');
+    setConnectionStatus('mattermost', true);
     ws.send(JSON.stringify({
       seq: 1,
       action: 'authentication_challenge',
@@ -102,6 +109,8 @@ async function init() {
 
   ws.on('close', () => {
     log.warn('Mattermost WebSocket closed, reconnecting in 5 seconds...');
+    setConnectionStatus('mattermost', false);
+    recordReconnection('mattermost');
     setTimeout(() => {
       log.info('Attempting to reconnect to Mattermost WebSocket');
       init().catch(err => log.error('Reconnection failed', { error: err.message }));
@@ -167,6 +176,18 @@ app.get('/health', (req, res) => {
     service: 'mattermost-slack-bridge',
     timestamp: new Date().toISOString() 
   });
+});
+
+// Add metrics endpoint for Prometheus
+app.get('/metrics', async (req, res) => {
+  try {
+    res.set('Content-Type', getMetricsContentType());
+    const metrics = await getMetrics();
+    res.end(metrics);
+  } catch (err) {
+    log.error('Error generating metrics', { error: err.message });
+    res.status(500).end();
+  }
 });
 
 // Start the server
