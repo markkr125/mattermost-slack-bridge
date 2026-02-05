@@ -13,10 +13,57 @@ const slackSigningSecret = process.env.SLACK_SIGNING_SECRET;
 const slackBotToken = process.env.SLACK_BOT_TOKEN;
 const mmToken = process.env.MM_TOKEN;
 const mmUrl = process.env.MM_URL;
-const slackChannelId = process.env.SLACK_CHANNEL_ID;
-const mmChannelId = process.env.MM_CHANNEL_ID;
 const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
 const redisExpiryDays = parseInt(process.env.REDIS_EXPIRY_DAYS || '180', 10);
+
+// Parse channel mappings configuration
+// Supports both new JSON format and legacy single channel pair
+let channelMappings = [];
+if (process.env.CHANNEL_MAPPINGS) {
+  try {
+    channelMappings = JSON.parse(process.env.CHANNEL_MAPPINGS);
+    if (!Array.isArray(channelMappings)) {
+      throw new Error('CHANNEL_MAPPINGS must be an array');
+    }
+    // Validate each mapping has required fields
+    channelMappings.forEach((mapping, index) => {
+      if (!mapping.slack || !mapping.mattermost) {
+        throw new Error(`Channel mapping at index ${index} must have both 'slack' and 'mattermost' fields`);
+      }
+    });
+    console.log(`Loaded ${channelMappings.length} channel mapping(s) from CHANNEL_MAPPINGS`);
+  } catch (err) {
+    console.error('Error parsing CHANNEL_MAPPINGS:', err.message);
+    console.error('Falling back to legacy single channel configuration');
+    channelMappings = [];
+  }
+}
+
+// Fall back to legacy single channel pair if no mappings configured
+if (channelMappings.length === 0) {
+  const slackChannelId = process.env.SLACK_CHANNEL_ID;
+  const mmChannelId = process.env.MM_CHANNEL_ID;
+  if (slackChannelId && mmChannelId) {
+    channelMappings = [{ slack: slackChannelId, mattermost: mmChannelId }];
+    console.log('Using legacy single channel pair configuration');
+  } else {
+    console.error('No channel mappings configured. Please set either CHANNEL_MAPPINGS or both SLACK_CHANNEL_ID and MM_CHANNEL_ID');
+    process.exit(1);
+  }
+}
+
+// Create lookup maps for efficient routing
+const slackToMmChannelMap = new Map();
+const mmToSlackChannelMap = new Map();
+channelMappings.forEach(mapping => {
+  slackToMmChannelMap.set(mapping.slack, mapping.mattermost);
+  mmToSlackChannelMap.set(mapping.mattermost, mapping.slack);
+});
+
+console.log('Channel mappings configured:');
+channelMappings.forEach(mapping => {
+  console.log(`  Slack ${mapping.slack} <-> Mattermost ${mapping.mattermost}`);
+});
 
 // Initialize Redis client
 const redis = new Redis(redisUrl, {
@@ -50,36 +97,37 @@ const mmApi = axios.create({
 });
 
 // Helper functions for Redis-based thread mapping with error handling
+// Keys now include channel IDs to support multiple channel pairs
 const REDIS_EXPIRY_SECONDS = redisExpiryDays * 24 * 60 * 60;
 
-async function setSlackToMm(slackTs, mmId) {
+async function setSlackToMm(slackChannelId, slackTs, mmId) {
   try {
-    await redis.setex(`slack:${slackTs}`, REDIS_EXPIRY_SECONDS, mmId);
+    await redis.setex(`slack:${slackChannelId}:${slackTs}`, REDIS_EXPIRY_SECONDS, mmId);
   } catch (err) {
     console.error('Error saving to Redis (slack->mm):', err.message);
   }
 }
 
-async function getSlackToMm(slackTs) {
+async function getSlackToMm(slackChannelId, slackTs) {
   try {
-    return await redis.get(`slack:${slackTs}`);
+    return await redis.get(`slack:${slackChannelId}:${slackTs}`);
   } catch (err) {
     console.error('Error reading from Redis (slack->mm):', err.message);
     return null;
   }
 }
 
-async function setMmToSlack(mmId, slackTs) {
+async function setMmToSlack(mmChannelId, mmId, slackTs) {
   try {
-    await redis.setex(`mm:${mmId}`, REDIS_EXPIRY_SECONDS, slackTs);
+    await redis.setex(`mm:${mmChannelId}:${mmId}`, REDIS_EXPIRY_SECONDS, slackTs);
   } catch (err) {
     console.error('Error saving to Redis (mm->slack):', err.message);
   }
 }
 
-async function getMmToSlack(mmId) {
+async function getMmToSlack(mmChannelId, mmId) {
   try {
-    return await redis.get(`mm:${mmId}`);
+    return await redis.get(`mm:${mmChannelId}:${mmId}`);
   } catch (err) {
     console.error('Error reading from Redis (mm->slack):', err.message);
     return null;
@@ -185,7 +233,10 @@ async function init() {
       // Handle new posts
       if (event.event === 'posted') {
         const post = JSON.parse(event.data.post);
-        if (post.channel_id !== mmChannelId || post.user_id === mmBotUserId) return;
+        
+        // Check if this channel is mapped
+        const slackChannelId = mmToSlackChannelMap.get(post.channel_id);
+        if (!slackChannelId || post.user_id === mmBotUserId) return;
         
       // Fetch MM user details for avatar (username is already in event.data.sender_name)
       let iconUrl = '';
@@ -224,7 +275,7 @@ async function init() {
 
         let slackThreadTs;
         if (post.root_id) {
-          slackThreadTs = await getMmToSlack(post.root_id);
+          slackThreadTs = await getMmToSlack(post.channel_id, post.root_id);
         }
 
         if (slackThreadTs) {
@@ -261,14 +312,14 @@ async function init() {
           }
 
           if (!post.root_id) {
-            await setMmToSlack(post.id, response.ts);
-            await setSlackToMm(response.ts, post.id);
+            await setMmToSlack(post.channel_id, post.id, response.ts);
+            await setSlackToMm(slackChannelId, response.ts, post.id);
           }
         } else {
           const response = await slackApp.client.chat.postMessage(slackMessage);
           if (!post.root_id) {
-            await setMmToSlack(post.id, response.ts);
-            await setSlackToMm(response.ts, post.id);
+            await setMmToSlack(post.channel_id, post.id, response.ts);
+            await setSlackToMm(slackChannelId, response.ts, post.id);
           }
         }
       }
@@ -276,9 +327,12 @@ async function init() {
       // Handle post edits
       else if (event.event === 'post_edited') {
         const post = JSON.parse(event.data.post);
-        if (post.channel_id !== mmChannelId || post.user_id === mmBotUserId) return;
         
-        const slackTs = await getMmToSlack(post.id);
+        // Check if this channel is mapped
+        const slackChannelId = mmToSlackChannelMap.get(post.channel_id);
+        if (!slackChannelId || post.user_id === mmBotUserId) return;
+        
+        const slackTs = await getMmToSlack(post.channel_id, post.id);
         if (slackTs) {
           try {
             // Convert Mattermost markdown to Slack markdown
@@ -308,9 +362,12 @@ async function init() {
       // Handle post deletes
       else if (event.event === 'post_deleted') {
         const post = JSON.parse(event.data.post);
-        if (post.channel_id !== mmChannelId) return;
         
-        const slackTs = await getMmToSlack(post.id);
+        // Check if this channel is mapped
+        const slackChannelId = mmToSlackChannelMap.get(post.channel_id);
+        if (!slackChannelId) return;
+        
+        const slackTs = await getMmToSlack(post.channel_id, post.id);
         if (slackTs) {
           try {
             await slackApp.client.chat.delete({
@@ -344,7 +401,9 @@ async function init() {
   slackApp.message(async ({ message }) => {
     try {
       // Guard conditions for message filtering
-      if (message.channel !== slackChannelId) return; // Wrong channel
+      // Check if this channel is mapped
+      const mmChannelId = slackToMmChannelMap.get(message.channel);
+      if (!mmChannelId) return; // Channel not in our mappings
       if (!message.user) return; // No user (system messages, etc.)
       if (message.user === slackBotUserId) return; // Skip our own messages
       if (message.subtype) return; // Skip messages with subtypes (handled by event listener)
@@ -374,7 +433,7 @@ async function init() {
 
       let mmRootId;
       if (message.thread_ts) {
-        mmRootId = await getSlackToMm(message.thread_ts);
+        mmRootId = await getSlackToMm(message.channel, message.thread_ts);
       }
 
       if (mmRootId) {
@@ -418,8 +477,8 @@ async function init() {
       const newPost = await mmApi.post('/posts', mmPost);
 
       if (!message.thread_ts) {
-        await setSlackToMm(message.ts, newPost.data.id);
-        await setMmToSlack(newPost.data.id, message.ts);
+        await setSlackToMm(message.channel, message.ts, newPost.data.id);
+        await setMmToSlack(mmChannelId, newPost.data.id, message.ts);
       }
     } catch (err) {
       console.error('Error processing Slack message:', err.message);
@@ -432,14 +491,18 @@ async function init() {
       // Explicitly ignore messages without subtypes (regular messages handled by message listener)
       if (!event.subtype) return;
       
+      // Check if this channel is mapped
+      const mmChannelId = slackToMmChannelMap.get(event.channel);
+      if (!mmChannelId) return;
+      
       // Only handle message_changed and message_deleted events
-      if (event.subtype === 'message_changed' && event.channel === slackChannelId) {
+      if (event.subtype === 'message_changed') {
         // Check message exists before accessing its properties
         if (!event.message) return;
         const message = event.message;
         if (!message.user || message.user === slackBotUserId) return;
         
-        const mmPostId = await getSlackToMm(message.ts);
+        const mmPostId = await getSlackToMm(event.channel, message.ts);
         if (mmPostId) {
           try {
             // Convert Slack markdown to Mattermost markdown
@@ -454,10 +517,10 @@ async function init() {
           }
         }
       }
-      else if (event.subtype === 'message_deleted' && event.channel === slackChannelId) {
+      else if (event.subtype === 'message_deleted') {
         // Check previous_message exists before accessing its properties
         if (!event.previous_message) return;
-        const mmPostId = await getSlackToMm(event.previous_message.ts);
+        const mmPostId = await getSlackToMm(event.channel, event.previous_message.ts);
         if (mmPostId) {
           try {
             await mmApi.delete(`/posts/${mmPostId}`);
