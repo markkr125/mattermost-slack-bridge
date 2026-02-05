@@ -2,6 +2,7 @@
 const { convertSlackToMattermost } = require('../utils/markdown');
 const { setSlackToMm, getSlackToMm, setMmToSlack, setReactionMapping } = require('../storage/redis');
 const { slackToMmChannelMap } = require('../config/environment');
+const { getSlackUserMapping } = require('../config/user-mappings');
 const { createContextLogger } = require('../utils/logger');
 
 const log = createContextLogger('slack');
@@ -36,12 +37,22 @@ async function handleSlackMessage(slackApp, mmApi, message) {
 
   let userName = 'Unknown User';
   let avatarUrl = '';
-  try {
-    const userInfo = await slackApp.client.users.info({ user: message.user });
-    userName = userInfo.user?.profile?.display_name || userInfo.user?.name || 'Unknown User';
-    avatarUrl = userInfo.user?.profile?.image_original || userInfo.user?.profile?.image_1024 || '';  // Public URL
-  } catch (err) {
-    log.error('Error fetching Slack user info', { userId: message.user, error: err.message });
+  
+  // Check if there's a user mapping override
+  const userMapping = getSlackUserMapping(message.user);
+  if (userMapping) {
+    userName = userMapping.displayName || userName;
+    avatarUrl = userMapping.avatarUrl || avatarUrl;
+    log.debug('Using mapped user info', { slackUserId: message.user, userName, avatarUrl });
+  } else {
+    // Fetch from Slack API if no mapping
+    try {
+      const userInfo = await slackApp.client.users.info({ user: message.user });
+      userName = userInfo.user?.profile?.display_name || userInfo.user?.name || 'Unknown User';
+      avatarUrl = userInfo.user?.profile?.image_original || userInfo.user?.profile?.image_1024 || '';  // Public URL
+    } catch (err) {
+      log.error('Error fetching Slack user info', { userId: message.user, error: err.message });
+    }
   }
 
   // Convert Slack markdown to Mattermost markdown

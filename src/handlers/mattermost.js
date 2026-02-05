@@ -2,6 +2,7 @@
 const { convertMattermostToSlack } = require('../utils/markdown');
 const { setMmToSlack, getMmToSlack, setSlackToMm, setReactionMapping } = require('../storage/redis');
 const { mmToSlackChannelMap, config } = require('../config/environment');
+const { getMattermostUserMapping } = require('../config/user-mappings');
 const { createContextLogger } = require('../utils/logger');
 
 const log = createContextLogger('mattermost');
@@ -32,13 +33,24 @@ async function handleMattermostPost(slackApp, mmApi, event) {
   const slackChannelId = mmToSlackChannelMap.get(post.channel_id);
   if (!slackChannelId || post.user_id === mmBotUserId) return;
   
-  // Fetch MM user details for avatar (username is already in event.data.sender_name)
+  // Fetch MM user details for avatar and display name
+  let userName = event.data.sender_name || 'Unknown User';
   let iconUrl = '';
-  try {
-    await mmApi.get(`/users/${post.user_id}`);
-    iconUrl = `${config.mattermost.url}/api/v4/users/${post.user_id}/image`;  // May require auth
-  } catch (err) {
-    log.error('Error fetching MM user avatar', { userId: post.user_id, error: err.message });
+  
+  // Check if there's a user mapping override
+  const userMapping = getMattermostUserMapping(post.user_id);
+  if (userMapping) {
+    userName = userMapping.displayName || userName;
+    iconUrl = userMapping.avatarUrl || iconUrl;
+    log.debug('Using mapped user info', { mmUserId: post.user_id, userName, iconUrl });
+  } else {
+    // Fetch from Mattermost API if no mapping
+    try {
+      await mmApi.get(`/users/${post.user_id}`);
+      iconUrl = `${config.mattermost.url}/api/v4/users/${post.user_id}/image`;  // May require auth
+    } catch (err) {
+      log.error('Error fetching MM user avatar', { userId: post.user_id, error: err.message });
+    }
   }
 
   // Convert Mattermost markdown to Slack markdown
@@ -58,7 +70,7 @@ async function handleMattermostPost(slackApp, mmApi, event) {
     channel: slackChannelId,
     text: convertedMessage,
     blocks,
-    username: event.data.sender_name,  // Override display name
+    username: userName,  // Override display name (use mapped or fetched name)
     icon_url: iconUrl,  // Override avatar (requires chat:write.customize scope)
     link_names: true,
   };
