@@ -1,5 +1,8 @@
 // src/config/environment.js
 require('dotenv').config();
+const { createContextLogger } = require('../utils/logger');
+
+const log = createContextLogger('config');
 
 /**
  * Parse and validate channel mappings from environment variables
@@ -20,10 +23,10 @@ function parseChannelMappings() {
           throw new Error(`Channel mapping at index ${index} must have both 'slack' and 'mattermost' fields`);
         }
       });
-      console.log(`Loaded ${channelMappings.length} channel ${channelMappings.length === 1 ? 'mapping' : 'mappings'} from CHANNEL_MAPPINGS`);
+      log.info(`Loaded ${channelMappings.length} channel mapping(s) from CHANNEL_MAPPINGS`);
     } catch (err) {
-      console.error('Error parsing CHANNEL_MAPPINGS:', err.message);
-      console.error('Falling back to legacy single channel configuration');
+      log.error('Error parsing CHANNEL_MAPPINGS', { error: err.message });
+      log.warn('Falling back to legacy single channel configuration');
       channelMappings = [];
     }
   }
@@ -34,10 +37,11 @@ function parseChannelMappings() {
     const mmChannelId = process.env.MM_CHANNEL_ID;
     if (slackChannelId && mmChannelId) {
       channelMappings = [{ slack: slackChannelId, mattermost: mmChannelId }];
-      console.log('Using legacy single channel pair configuration');
+      log.info('Using legacy single channel pair configuration');
     } else {
-      console.error('No channel mappings configured. Please set either CHANNEL_MAPPINGS or both SLACK_CHANNEL_ID and MM_CHANNEL_ID');
-      console.error('Example CHANNEL_MAPPINGS format: [{"slack":"C0123456789","mattermost":"abcde12345"}]');
+      log.error('No channel mappings configured');
+      log.error('Please set either CHANNEL_MAPPINGS or both SLACK_CHANNEL_ID and MM_CHANNEL_ID');
+      log.error('Example CHANNEL_MAPPINGS format: [{"slack":"C0123456789","mattermost":"abcde12345"}]');
       process.exit(1);
     }
   }
@@ -57,9 +61,9 @@ function createChannelMaps(channelMappings) {
     mmToSlackChannelMap.set(mapping.mattermost, mapping.slack);
   });
 
-  console.log('Channel mappings configured:');
+  log.info('Channel mappings configured:');
   channelMappings.forEach(mapping => {
-    console.log(`  Slack ${mapping.slack} <-> Mattermost ${mapping.mattermost}`);
+    log.info(`Slack ${mapping.slack} <-> Mattermost ${mapping.mattermost}`);
   });
 
   return { slackToMmChannelMap, mmToSlackChannelMap };

@@ -3,6 +3,7 @@ const { App, ExpressReceiver } = require('@slack/bolt');
 const axios = require('axios');
 const WebSocket = require('ws');
 const { config } = require('./config/environment');
+const { createContextLogger } = require('./utils/logger');
 const {
   setSlackBotUserId,
   handleSlackMessage,
@@ -15,6 +16,17 @@ const {
   handleMattermostPostEdit,
   handleMattermostPostDelete,
 } = require('./handlers/mattermost');
+const {
+  setSlackReactionBotId,
+  setMmReactionBotId,
+  handleSlackReactionAdd,
+  handleSlackReactionRemove,
+  handleMmReactionAdd,
+  handleMmReactionRemove
+} = require('./handlers/reactions');
+const { setReactionMapping } = require('./storage/redis');
+
+const log = createContextLogger('main');
 
 // Initialize Slack app
 const receiver = new ExpressReceiver({ signingSecret: config.slack.signingSecret });
@@ -38,16 +50,20 @@ async function init() {
   // Get Slack bot user ID
   const authTest = await slackApp.client.auth.test({ token: config.slack.botToken });
   setSlackBotUserId(authTest.user_id);
+  setSlackReactionBotId(authTest.user_id);
+  log.info('Slack bot authenticated', { userId: authTest.user_id });
 
   // Get Mattermost bot user ID
   const mmMe = await mmApi.get('/users/me');
   setMmBotUserId(mmMe.data.id);
+  setMmReactionBotId(mmMe.data.id);
+  log.info('Mattermost bot authenticated', { userId: mmMe.data.id });
 
   // Set up Mattermost WebSocket
   const ws = new WebSocket(`${config.mattermost.url.replace('http', 'ws')}/api/v4/websocket`);
 
   ws.on('open', () => {
-    console.log('Mattermost WebSocket connected');
+    log.info('Mattermost WebSocket connected');
     ws.send(JSON.stringify({
       seq: 1,
       action: 'authentication_challenge',
@@ -71,21 +87,29 @@ async function init() {
       else if (event.event === 'post_deleted') {
         await handleMattermostPostDelete(slackApp, event);
       }
+      // Handle reaction added
+      else if (event.event === 'reaction_added' && event.data.reaction) {
+        await handleMmReactionAdd(slackApp.client, JSON.parse(event.data.reaction));
+      }
+      // Handle reaction removed
+      else if (event.event === 'reaction_removed' && event.data.reaction) {
+        await handleMmReactionRemove(slackApp.client, JSON.parse(event.data.reaction));
+      }
     } catch (err) {
-      console.error('Error processing Mattermost message:', err.message);
+      log.error('Error processing Mattermost event', { error: err.message });
     }
   });
 
   ws.on('close', () => {
-    console.log('Mattermost WebSocket closed, reconnecting in 5 seconds...');
+    log.warn('Mattermost WebSocket closed, reconnecting in 5 seconds...');
     setTimeout(() => {
-      console.log('Reconnecting to Mattermost WebSocket...');
-      init().catch(console.error);
+      log.info('Attempting to reconnect to Mattermost WebSocket');
+      init().catch(err => log.error('Reconnection failed', { error: err.message }));
     }, 5000);
   });
 
   ws.on('error', (err) => {
-    console.error('Mattermost WebSocket error:', err);
+    log.error('Mattermost WebSocket error', { error: err.message });
   });
 
   // Set up Slack message listener for new messages
@@ -93,7 +117,7 @@ async function init() {
     try {
       await handleSlackMessage(slackApp, mmApi, message);
     } catch (err) {
-      console.error('Error processing Slack message:', err.message);
+      log.error('Error processing Slack message', { error: err.message });
     }
   });
   
@@ -111,15 +135,41 @@ async function init() {
         await handleSlackMessageDelete(mmApi, event);
       }
     } catch (err) {
-      console.error('Error processing Slack event:', err.message);
+      log.error('Error processing Slack event', { error: err.message });
+    }
+  });
+  
+  // Set up Slack reaction listeners
+  slackApp.event('reaction_added', async ({ event }) => {
+    try {
+      await handleSlackReactionAdd(slackApp.client, mmApi, event);
+    } catch (err) {
+      log.error('Error processing Slack reaction_added', { error: err.message });
+    }
+  });
+  
+  slackApp.event('reaction_removed', async ({ event }) => {
+    try {
+      await handleSlackReactionRemove(slackApp.client, mmApi, event);
+    } catch (err) {
+      log.error('Error processing Slack reaction_removed', { error: err.message });
     }
   });
 }
 
 // Start the bridge
-init().catch(console.error);
+init().catch(err => log.error('Bridge initialization failed', { error: err.message }));
+
+// Add health check endpoint for monitoring
+app.get('/health', (req, res) => {
+  res.status(200).json({ 
+    status: 'operational', 
+    service: 'mattermost-slack-bridge',
+    timestamp: new Date().toISOString() 
+  });
+});
 
 // Start the server
 app.listen(config.port, () => {
-  console.log(`Bridge running on port ${config.port}`);
+  log.info(`Bridge server started`, { port: config.port });
 });

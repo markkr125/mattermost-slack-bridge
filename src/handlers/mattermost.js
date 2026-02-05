@@ -1,7 +1,10 @@
 // src/handlers/mattermost.js
 const { convertMattermostToSlack } = require('../utils/markdown');
-const { setMmToSlack, getMmToSlack, setSlackToMm } = require('../storage/redis');
+const { setMmToSlack, getMmToSlack, setSlackToMm, setReactionMapping } = require('../storage/redis');
 const { mmToSlackChannelMap, config } = require('../config/environment');
+const { createContextLogger } = require('../utils/logger');
+
+const log = createContextLogger('mattermost');
 
 let mmBotUserId = null;
 
@@ -35,7 +38,7 @@ async function handleMattermostPost(slackApp, mmApi, event) {
     await mmApi.get(`/users/${post.user_id}`);
     iconUrl = `${config.mattermost.url}/api/v4/users/${post.user_id}/image`;  // May require auth
   } catch (err) {
-    console.error('Error fetching MM user avatar:', err.message);
+    log.error('Error fetching MM user avatar', { userId: post.user_id, error: err.message });
   }
 
   // Convert Mattermost markdown to Slack markdown
@@ -91,19 +94,36 @@ async function handleMattermostPost(slackApp, mmApi, event) {
           title: fileName
         });
       } catch (err) {
-        console.error('Error transferring MM file to Slack:', err.message);
+        log.error('Error transferring file from MM to Slack', { 
+          fileId, 
+          error: err.message 
+        });
       }
     }
 
     if (!post.root_id) {
       await setMmToSlack(post.channel_id, post.id, response.ts);
       await setSlackToMm(slackChannelId, response.ts, post.id);
+      // Store reaction mapping
+      await setReactionMapping('slack', slackChannelId, response.ts, post.id);
+      await setReactionMapping('mm', slackChannelId, post.id, response.ts);
+      log.debug('Stored message mapping', { 
+        mmPostId: post.id, 
+        slackTs: response.ts 
+      });
     }
   } else {
     const response = await slackApp.client.chat.postMessage(slackMessage);
     if (!post.root_id) {
       await setMmToSlack(post.channel_id, post.id, response.ts);
       await setSlackToMm(slackChannelId, response.ts, post.id);
+      // Store reaction mapping
+      await setReactionMapping('slack', slackChannelId, response.ts, post.id);
+      await setReactionMapping('mm', slackChannelId, post.id, response.ts);
+      log.debug('Stored message mapping', { 
+        mmPostId: post.id, 
+        slackTs: response.ts 
+      });
     }
   }
 }
@@ -138,9 +158,9 @@ async function handleMattermostPostEdit(slackApp, event) {
           }
         ]
       });
-      console.log(`Updated Slack message ${slackTs} from MM edit`);
+      log.info('Updated Slack message from MM edit', { slackTs });
     } catch (err) {
-      console.error('Error updating Slack message:', err.message);
+      log.error('Error updating Slack message', { slackTs, error: err.message });
     }
   }
 }
@@ -162,9 +182,9 @@ async function handleMattermostPostDelete(slackApp, event) {
         channel: slackChannelId,
         ts: slackTs
       });
-      console.log(`Deleted Slack message ${slackTs} from MM delete`);
+      log.info('Deleted Slack message from MM delete', { slackTs });
     } catch (err) {
-      console.error('Error deleting Slack message:', err.message);
+      log.error('Error deleting Slack message', { slackTs, error: err.message });
     }
   }
 }
