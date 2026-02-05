@@ -317,6 +317,7 @@ const slackMarkdown = convertMattermostToSlack(mmText);
 6. **Don't commit secrets or credentials** (use .env)
 7. **Don't modify the project structure** without updating this file
 8. **Don't use `require()` for external APIs** in utility functions
+9. **Don't create summary/status files** like `IMPLEMENTATION_SUMMARY.md`, `STATUS.md`, `CHANGES.md` in the root directory - use Git commit messages and PR descriptions for tracking changes
 
 ## Do This ✅
 
@@ -334,8 +335,10 @@ const slackMarkdown = convertMattermostToSlack(mmText);
 All environment variables must be:
 1. Documented in `.env.example`
 2. Parsed in `src/config/environment.js`
-3. Documented in main `README.md`
+3. Documented in `docs/environment-variables.md` (comprehensive reference)
 4. Validated with clear error messages if required
+
+See `docs/environment-variables.md` for complete documentation of all available environment variables.
 
 ## Security Considerations
 

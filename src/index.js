@@ -31,6 +31,16 @@ const {
   handleMmReactionAdd,
   handleMmReactionRemove
 } = require('./handlers/reactions');
+const {
+  handleSlackSlashCommand,
+  handleMattermostSlashCommand
+} = require('./handlers/slash-commands');
+const {
+  initializePresence,
+  handleSlackPresenceChange,
+  handleMattermostStatusChange,
+  startPeriodicSync
+} = require('./handlers/presence');
 const { setReactionMapping } = require('./storage/redis');
 const {
   setConnectionStatus,
@@ -76,6 +86,22 @@ async function init() {
     setMmBotUserId(mmMe.data.id);
     setMmReactionBotId(mmMe.data.id);
     log.info('Mattermost bot authenticated', { userId: mmMe.data.id });
+    
+    // Initialize presence synchronization if enabled
+    if (config.presence.enabled) {
+      initializePresence({
+        enabled: true,
+        syncIntervalMs: config.presence.syncIntervalMinutes * 60 * 1000
+      });
+      log.info('Presence synchronization enabled', { 
+        intervalMinutes: config.presence.syncIntervalMinutes 
+      });
+      
+      // Start periodic presence sync
+      startPeriodicSync(slackApp.client, mmApi);
+    } else {
+      log.info('Presence synchronization disabled');
+    }
     
     // Initialize alerting if configured
     const alertChannel = process.env.ALERT_CHANNEL;
@@ -123,6 +149,10 @@ async function init() {
       // Handle reaction removed
       else if (event.event === 'reaction_removed' && event.data.reaction) {
         await handleMmReactionRemove(slackApp.client, JSON.parse(event.data.reaction));
+      }
+      // Handle user status changes for presence sync
+      else if (event.event === 'status_change' && config.presence.enabled) {
+        await handleMattermostStatusChange(slackApp.client, event);
       }
     } catch (err) {
       log.error('Error processing Mattermost event', { error: err.message });
@@ -202,6 +232,34 @@ async function init() {
       log.error('Error processing Slack reaction_removed', { error: err.message });
     }
   });
+  
+  // Set up Slack presence listener (if presence sync enabled)
+  if (config.presence.enabled) {
+    slackApp.event('presence_change', async ({ event }) => {
+      try {
+        await handleSlackPresenceChange(slackApp.client, mmApi, event);
+      } catch (err) {
+        log.error('Error processing Slack presence_change', { error: err.message });
+      }
+    });
+  }
+  
+  // Set up Slack slash command listener
+  slackApp.command('/bridge', async ({ command, ack, respond }) => {
+    try {
+      await ack(); // Acknowledge command receipt
+      const response = await handleSlackSlashCommand(slackApp, mmApi, command);
+      if (response) {
+        await respond(response);
+      }
+    } catch (err) {
+      log.error('Error processing Slack slash command', { error: err.message });
+      await respond({
+        response_type: 'ephemeral',
+        text: `❌ Error: ${err.message}`
+      });
+    }
+  });
   } catch (err) {
     log.error('Bridge initialization error', { error: err.message });
     await sendCriticalAlert(
@@ -226,6 +284,20 @@ app.get('/health', (req, res) => {
     service: 'mattermost-slack-bridge',
     timestamp: new Date().toISOString() 
   });
+});
+
+// Add Mattermost slash command endpoint
+app.post('/mattermost/commands', async (req, res) => {
+  try {
+    await handleMattermostSlashCommand(slackApp, mmApi, req.body);
+    res.status(200).json({ status: 'ok' });
+  } catch (err) {
+    log.error('Error processing Mattermost slash command', { error: err.message });
+    res.status(200).json({ 
+      text: `❌ Error: ${err.message}`,
+      response_type: 'ephemeral'
+    });
+  }
 });
 
 // Add metrics endpoint for Prometheus

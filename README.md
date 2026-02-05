@@ -50,6 +50,10 @@
 - **Structured logging** - contextual logging with configurable log levels
 - **Docker deployment** - ready-to-use Docker and docker-compose setup
 - **Health monitoring** - built-in health check endpoint for container orchestration
+- **Worker pools** - concurrent message processing for high-volume scenarios
+- **Performance benchmarking** - built-in tools for performance analysis
+- **Slash commands** - interactive bridge control and monitoring via `/bridge` command
+- **User presence synchronization** - sync online/away/offline status between platforms
 
 ### Not Supported ❌
 - Direct messages (DMs)
@@ -598,6 +602,160 @@ All the same environment variables from `.env.example` can be passed to Docker:
 
 ---
 
+## 🚀 Advanced Features
+
+### Worker Pools for High-Volume Scenarios
+
+The bridge includes a concurrent message processor for handling high-volume message traffic efficiently.
+
+**Configuration:**
+```env
+WORKER_POOL_SIZE=10  # Number of concurrent message processing workers (default: 10)
+```
+
+The worker pool automatically queues incoming messages and processes them concurrently up to the configured limit, preventing overload and ensuring smooth operation even during traffic spikes.
+
+**Usage in Code:**
+```javascript
+const { MessageProcessor } = require('./src/utils/message-processor');
+
+const processor = new MessageProcessor({ maxConcurrent: 10, name: 'messages' });
+
+// Submit tasks for concurrent processing
+await processor.submit(async () => {
+  // Process message
+});
+
+// Get statistics
+const stats = processor.snapshot();
+console.log(`Completed: ${stats.completed}, Errors: ${stats.errors}`);
+```
+
+---
+
+### Performance Benchmarking
+
+Built-in performance monitoring and benchmarking tools help you measure and optimize bridge performance.
+
+**Running Benchmarks:**
+```bash
+# Run all benchmarks
+node tools/benchmark-cli.js --scenario all --iterations 100
+
+# Run specific benchmark
+node tools/benchmark-cli.js --scenario message-processing --iterations 50
+
+# Test concurrent processing
+node tools/benchmark-cli.js --scenario concurrent --pool-size 20 --iterations 200
+```
+
+**Available Scenarios:**
+- `message-processing` - Message processing throughput
+- `concurrent` - Concurrent message handling with worker pools
+- `file-ops` - File operation simulation
+- `all` - Run all benchmarks
+
+**In-Application Monitoring:**
+```javascript
+const { perfMonitor } = require('./src/utils/perf-monitor');
+
+// Track operation performance
+const { output, measurement } = await perfMonitor.track('my-operation', async () => {
+  // Your code here
+  return result;
+});
+
+console.log(`Duration: ${measurement.durationMs}ms`);
+
+// Generate report
+console.log(perfMonitor.report());
+```
+
+---
+
+### Slash Commands
+
+Interactive bridge control and monitoring via slash commands in both Slack and Mattermost.
+
+**Setup for Slack:**
+
+1. Go to your Slack app configuration → **Slash Commands**
+2. Click **Create New Command**
+3. Configure the command:
+   - Command: `/bridge`
+   - Request URL: `https://your-server:3000/slack/events`
+   - Short Description: `Control and monitor the Mattermost-Slack bridge`
+   - Usage Hint: `[status|stats|perf|help]`
+4. Save the command
+
+**Setup for Mattermost:**
+
+1. Go to **System Console** → **Integrations** → **Slash Commands**
+2. Click **Add Slash Command**
+3. Configure:
+   - Command Trigger Word: `bridge`
+   - Request URL: `https://your-server:3000/mattermost/commands`
+   - Request Method: `POST`
+   - Response Username: `Bridge Bot`
+4. Save the command
+
+**Available Commands:**
+
+```bash
+# Show bridge status and uptime
+/bridge status
+
+# Display connection statistics
+/bridge stats
+
+# View performance metrics
+/bridge perf
+
+# Show help message
+/bridge help
+```
+
+All command responses are ephemeral (only visible to you).
+
+---
+
+### User Presence Synchronization
+
+Synchronize user online/away/offline status between Slack and Mattermost.
+
+**Configuration:**
+```env
+# Enable presence synchronization
+PRESENCE_SYNC_ENABLED=true
+
+# Sync interval in minutes (default: 5)
+PRESENCE_SYNC_INTERVAL_MINUTES=5
+```
+
+**How It Works:**
+
+1. **Slack → Mattermost**: When a Slack user's presence changes (active/away), their Mattermost status is updated
+2. **Periodic Sync**: Every N minutes, all user presences are synchronized from Slack to Mattermost
+3. **Status Mapping**:
+   - Slack `active` → Mattermost `online`
+   - Slack `away` → Mattermost `away`
+
+**Note**: Due to Slack API limitations, bots cannot set user presence in Slack, so Mattermost → Slack presence sync is not fully supported.
+
+**User Mapping:**
+
+Presence sync requires user mappings to be configured. Users will be automatically mapped when they send messages, or you can configure explicit mappings in your user mappings configuration.
+
+**Example:**
+```javascript
+const { registerPresenceMapping } = require('./src/handlers/presence');
+
+// Register user mapping for presence sync
+registerPresenceMapping('SLACK_USER_ID', 'MM_USER_ID');
+```
+
+---
+
 ## 🗺️ Roadmap
 
 ### Completed ✅
@@ -615,13 +773,13 @@ All the same environment variables from `.env.example` can be passed to Docker:
 - ~~Exponential backoff reconnections~~
 - ~~Critical error alerting~~
 - ~~Periodic health status monitoring~~
+- ~~Worker pools for high-volume scenarios~~
+- ~~Performance benchmarking tools~~
+- ~~Slash commands support~~
+- ~~User presence synchronization~~
 
 ### Planned 🚧
 - Slack custom emoji support
-- Worker pools for high-volume scenarios
-- Performance benchmarking tools
-- Slash commands support
-- User presence synchronization
 - Optional sharding for distributed deployments
 
 ---

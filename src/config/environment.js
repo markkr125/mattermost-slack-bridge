@@ -83,6 +83,13 @@ const config = {
     url: process.env.REDIS_URL || 'redis://localhost:6379',
     expiryDays: parseInt(process.env.REDIS_EXPIRY_DAYS || '180', 10),
   },
+  workerPool: {
+    size: parseInt(process.env.WORKER_POOL_SIZE || '10', 10),
+  },
+  presence: {
+    enabled: process.env.PRESENCE_SYNC_ENABLED === 'true',
+    syncIntervalMinutes: parseInt(process.env.PRESENCE_SYNC_INTERVAL_MINUTES || '5', 10),
+  },
   port: process.env.PORT || 3000,
 };
 
