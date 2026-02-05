@@ -14,6 +14,9 @@ jobs:
     name: Run Bridge Tests
     runs-on: ubuntu-22.04
     timeout-minutes: 10
+    
+    permissions:
+      contents: read
 
     services:
       redis-instance:
