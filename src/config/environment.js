@@ -1,6 +1,7 @@
 // src/config/environment.js
 require('dotenv').config();
 const { createContextLogger } = require('../utils/logger');
+const { initializeSharding, filterChannelMappingsForShard } = require('../utils/sharding');
 
 const log = createContextLogger('config');
 
@@ -90,11 +91,26 @@ const config = {
     enabled: process.env.PRESENCE_SYNC_ENABLED === 'true',
     syncIntervalMinutes: parseInt(process.env.PRESENCE_SYNC_INTERVAL_MINUTES || '5', 10),
   },
+  emoji: {
+    syncEnabled: process.env.CUSTOM_EMOJI_SYNC_ENABLED !== 'false', // Default to true
+    syncIntervalMinutes: parseInt(process.env.CUSTOM_EMOJI_SYNC_INTERVAL_MINUTES || '60', 10),
+  },
+  sharding: {
+    enabled: process.env.SHARDING_ENABLED === 'true',
+    shardId: parseInt(process.env.SHARD_ID || '0', 10),
+    totalShards: parseInt(process.env.TOTAL_SHARDS || '1', 10),
+  },
   port: process.env.PORT || 3000,
 };
 
 // Parse and setup channel mappings
-const channelMappings = parseChannelMappings();
+let allChannelMappings = parseChannelMappings();
+
+// Initialize sharding if enabled
+initializeSharding(config.sharding);
+
+// Filter channel mappings for this shard
+const channelMappings = filterChannelMappingsForShard(allChannelMappings);
 const { slackToMmChannelMap, mmToSlackChannelMap } = createChannelMaps(channelMappings);
 
 module.exports = {

@@ -77,9 +77,40 @@ Welcome to the Mattermost-Slack Bridge documentation! This directory contains co
 - Alerting and health checks
 - Worker pools and performance tuning
 - Presence synchronization settings
+- Custom emoji synchronization
+- Sharding configuration for distributed deployments
 - Configuration examples for different scenarios
 
 **Audience**: System administrators, DevOps engineers, developers
+
+---
+
+### [Custom Emoji Support](custom-emoji.md)
+**Purpose**: Guide to Slack custom emoji synchronization
+
+**Topics Covered**:
+- Custom emoji detection and caching
+- Configuration options for emoji sync
+- Monitoring and troubleshooting
+- Limitations and workarounds
+- Best practices for emoji management
+
+**Audience**: Developers, system administrators
+
+---
+
+### [Sharding Guide](sharding.md)
+**Purpose**: Distributed deployment with sharding
+
+**Topics Covered**:
+- Sharding architecture and channel assignment
+- Configuration for multi-instance deployments
+- Docker Compose and Kubernetes examples
+- Monitoring and operations
+- Scaling guidelines and best practices
+- Troubleshooting distributed deployments
+
+**Audience**: DevOps engineers, system administrators
 
 ---
 
