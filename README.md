@@ -8,6 +8,9 @@
 - **[API Reference](docs/api.md)** - Module and function documentation
 - **[Development Guide](docs/development.md)** - Local setup and testing
 - **[Deployment Guide](docs/deployment.md)** - Production deployment strategies
+- **[Custom Emoji Support](docs/custom-emoji.md)** - Slack custom emoji synchronization
+- **[Sharding Guide](docs/sharding.md)** - Distributed deployments with sharding
+- **[Environment Variables](docs/environment-variables.md)** - Complete configuration reference
 
 ---
 
@@ -40,6 +43,7 @@
 - **Message editing** - edits propagate to the other platform
 - **Message deletion** - deletions sync bidirectionally
 - **Reaction synchronization** - emoji reactions sync bidirectionally with automatic translation
+- **Slack custom emoji support** - automatic detection and sync of workspace custom emojis
 - **Username & avatar preservation** - see who sent each message
 - **Flexible storage backend** - Redis (default) or in-memory storage for development
 - **Prometheus metrics** - `/metrics` endpoint for monitoring and observability
@@ -54,6 +58,7 @@
 - **Performance benchmarking** - built-in tools for performance analysis
 - **Slash commands** - interactive bridge control and monitoring via `/bridge` command
 - **User presence synchronization** - sync online/away/offline status between platforms
+- **Optional sharding** - distribute load across multiple instances for high availability
 
 ### Not Supported ❌
 - Direct messages (DMs)
@@ -777,10 +782,13 @@ registerPresenceMapping('SLACK_USER_ID', 'MM_USER_ID');
 - ~~Performance benchmarking tools~~
 - ~~Slash commands support~~
 - ~~User presence synchronization~~
+- ~~Slack custom emoji support~~
+- ~~Optional sharding for distributed deployments~~
 
-### Planned 🚧
-- Slack custom emoji support
-- Optional sharding for distributed deployments
+### Future Enhancements 🚧
+- Enhanced custom emoji management (auto-upload to Mattermost)
+- Bidirectional custom emoji sync
+- Dynamic shard rebalancing
 
 ---
 

@@ -12,6 +12,15 @@ jest.mock('../../src/utils/logger', () => ({
 }));
 jest.mock('../../src/storage/redis');
 jest.mock('ioredis');
+jest.mock('../../src/utils/emoji-sync', () => ({
+  getCustomEmojiUrl: jest.fn((emojiName) => {
+    if (emojiName === 'custom_parrot') {
+      return 'https://example.com/parrot.gif';
+    }
+    return null;
+  }),
+  isCustomEmoji: jest.fn((emojiName) => emojiName === 'custom_parrot')
+}));
 
 const {
   setSlackReactionBotId,
@@ -88,6 +97,22 @@ describe('Reactions Handler', () => {
       expect(mockMmApi.post).toHaveBeenCalledWith('/reactions', expect.objectContaining({
         post_id: 'mm_post_456',
         emoji_name: 'thumbsup'  // Translated from +1
+      }));
+    });
+
+    test('should handle custom Slack emoji reactions', async () => {
+      const eventData = {
+        reaction: 'custom_parrot',
+        item: { type: 'message', channel: 'C12345', ts: '123.456' },
+        user: 'U123'
+      };
+
+      await handleSlackReactionAdd(mockSlackClient, mockMmApi, eventData);
+
+      expect(getReactionMapping).toHaveBeenCalledWith('slack', 'C12345', '123.456');
+      expect(mockMmApi.post).toHaveBeenCalledWith('/reactions', expect.objectContaining({
+        post_id: 'mm_post_456',
+        emoji_name: 'custom_parrot'  // Custom emojis keep their name
       }));
     });
 

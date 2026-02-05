@@ -12,6 +12,8 @@ Complete reference for all environment variables used in the Mattermost-Slack Br
 - [Alerting & Monitoring](#alerting--monitoring)
 - [Worker Pools](#worker-pools)
 - [Presence Synchronization](#presence-synchronization)
+- [Custom Emoji Synchronization](#custom-emoji-synchronization)
+- [Sharding Configuration](#sharding-configuration)
 
 ---
 
@@ -585,6 +587,116 @@ PORT=3000
 
 ---
 
+## Custom Emoji Synchronization
+
+### `CUSTOM_EMOJI_SYNC_ENABLED`
+
+**Description:** Enable synchronization of Slack custom emojis
+
+**Type:** Boolean (optional)
+
+**Default:** `true`
+
+**Example:**
+```env
+CUSTOM_EMOJI_SYNC_ENABLED=true
+```
+
+**Notes:**
+- Fetches custom emojis from Slack workspace
+- Caches emoji metadata for reaction handling
+- See [Custom Emoji Documentation](custom-emoji.md) for details
+
+---
+
+### `CUSTOM_EMOJI_SYNC_INTERVAL_MINUTES`
+
+**Description:** Interval in minutes between custom emoji cache updates
+
+**Type:** Number (optional)
+
+**Default:** `60`
+
+**Range:** 1-1440 (1 minute to 24 hours)
+
+**Example:**
+```env
+CUSTOM_EMOJI_SYNC_INTERVAL_MINUTES=60
+```
+
+**Recommendations:**
+- **Small workspaces (<100 emojis):** 60 minutes
+- **Large workspaces (>500 emojis):** 120-240 minutes
+- **Frequently updated:** 30 minutes
+
+---
+
+## Sharding Configuration
+
+### `SHARDING_ENABLED`
+
+**Description:** Enable sharding for distributed deployments
+
+**Type:** Boolean (optional)
+
+**Default:** `false`
+
+**Example:**
+```env
+SHARDING_ENABLED=true
+```
+
+**Notes:**
+- Enables horizontal scaling across multiple instances
+- All instances must use same Redis backend
+- See [Sharding Documentation](sharding.md) for details
+
+---
+
+### `SHARD_ID`
+
+**Description:** Current shard ID (0-based index)
+
+**Type:** Number (optional)
+
+**Default:** `0`
+
+**Range:** 0 to `TOTAL_SHARDS - 1`
+
+**Example:**
+```env
+SHARD_ID=0
+```
+
+**Notes:**
+- Must be unique for each bridge instance
+- Must be less than `TOTAL_SHARDS`
+- Only relevant when `SHARDING_ENABLED=true`
+
+---
+
+### `TOTAL_SHARDS`
+
+**Description:** Total number of shards in the deployment
+
+**Type:** Number (optional)
+
+**Default:** `1`
+
+**Range:** 1 or higher
+
+**Example:**
+```env
+TOTAL_SHARDS=3
+```
+
+**Notes:**
+- Must be the same across all bridge instances
+- Determines channel distribution
+- Restart all instances when changing this value
+
+---
+
 ## Validation
 
 The bridge validates configuration on startup and will exit with clear error messages if:
@@ -594,6 +706,7 @@ The bridge validates configuration on startup and will exit with clear error mes
 - `CHANNEL_MAPPINGS` JSON is malformed
 - `STORAGE_BACKEND` is invalid (not `redis` or `memory`)
 - Redis connection fails (when using `redis` backend)
+- Invalid sharding configuration (`SHARD_ID >= TOTAL_SHARDS` or `TOTAL_SHARDS < 1`)
 
 Check the logs for specific error messages if the bridge fails to start.
 
@@ -605,3 +718,5 @@ Check the logs for specific error messages if the bridge fails to start.
 - [Environment Setup in Development Guide](./development.md)
 - [Deployment Guide](./deployment.md)
 - [API Reference](./api.md)
+- [Custom Emoji Documentation](custom-emoji.md)
+- [Sharding Documentation](sharding.md)
