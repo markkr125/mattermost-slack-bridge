@@ -4,6 +4,13 @@ const axios = require('axios');
 const WebSocket = require('ws');
 const { config } = require('./config/environment');
 const { createContextLogger } = require('./utils/logger');
+const { calculateBackoff } = require('./utils/reconnection');
+const { 
+  initializeAlerting, 
+  sendCriticalAlert, 
+  sendStatusMessage,
+  startPeriodicHealthCheck 
+} = require('./utils/alerting');
 const {
   setSlackBotUserId,
   handleSlackMessage,
@@ -25,8 +32,17 @@ const {
   handleMmReactionRemove
 } = require('./handlers/reactions');
 const { setReactionMapping } = require('./storage/redis');
+const {
+  setConnectionStatus,
+  recordReconnection,
+  getMetrics,
+  getMetricsContentType,
+} = require('./metrics/metrics');
 
 const log = createContextLogger('main');
+
+// Reconnection state
+let reconnectAttempt = 0;
 
 // Initialize Slack app
 const receiver = new ExpressReceiver({ signingSecret: config.slack.signingSecret });
@@ -47,23 +63,36 @@ const mmApi = axios.create({
  * Initialize the bridge
  */
 async function init() {
-  // Get Slack bot user ID
-  const authTest = await slackApp.client.auth.test({ token: config.slack.botToken });
-  setSlackBotUserId(authTest.user_id);
-  setSlackReactionBotId(authTest.user_id);
-  log.info('Slack bot authenticated', { userId: authTest.user_id });
+  try {
+    // Get Slack bot user ID
+    const authTest = await slackApp.client.auth.test({ token: config.slack.botToken });
+    setSlackBotUserId(authTest.user_id);
+    setSlackReactionBotId(authTest.user_id);
+    log.info('Slack bot authenticated', { userId: authTest.user_id });
+    setConnectionStatus('slack', true);
 
-  // Get Mattermost bot user ID
-  const mmMe = await mmApi.get('/users/me');
-  setMmBotUserId(mmMe.data.id);
-  setMmReactionBotId(mmMe.data.id);
-  log.info('Mattermost bot authenticated', { userId: mmMe.data.id });
+    // Get Mattermost bot user ID
+    const mmMe = await mmApi.get('/users/me');
+    setMmBotUserId(mmMe.data.id);
+    setMmReactionBotId(mmMe.data.id);
+    log.info('Mattermost bot authenticated', { userId: mmMe.data.id });
+    
+    // Initialize alerting if configured
+    const alertChannel = process.env.ALERT_CHANNEL;
+    if (alertChannel) {
+      initializeAlerting(slackApp, mmApi, alertChannel);
+      await sendStatusMessage('healthy', 'Bridge initialized successfully');
+    }
+    
+    // Reset reconnection attempt counter on successful init
+    reconnectAttempt = 0;
 
   // Set up Mattermost WebSocket
   const ws = new WebSocket(`${config.mattermost.url.replace('http', 'ws')}/api/v4/websocket`);
 
   ws.on('open', () => {
     log.info('Mattermost WebSocket connected');
+    setConnectionStatus('mattermost', true);
     ws.send(JSON.stringify({
       seq: 1,
       action: 'authentication_challenge',
@@ -101,15 +130,33 @@ async function init() {
   });
 
   ws.on('close', () => {
-    log.warn('Mattermost WebSocket closed, reconnecting in 5 seconds...');
+    log.warn('Mattermost WebSocket closed, reconnecting with exponential backoff...');
+    setConnectionStatus('mattermost', false);
+    recordReconnection('mattermost');
+    
+    const delay = calculateBackoff(reconnectAttempt);
+    reconnectAttempt++;
+    
     setTimeout(() => {
-      log.info('Attempting to reconnect to Mattermost WebSocket');
-      init().catch(err => log.error('Reconnection failed', { error: err.message }));
-    }, 5000);
+      log.info('Attempting to reconnect to Mattermost WebSocket', { attempt: reconnectAttempt });
+      init().catch(err => {
+        log.error('Reconnection failed', { error: err.message });
+        sendCriticalAlert(
+          'Bridge Reconnection Failed',
+          `Failed to reconnect to Mattermost after ${reconnectAttempt} attempts`,
+          { error: err.message, attempt: reconnectAttempt }
+        );
+      });
+    }, delay);
   });
 
   ws.on('error', (err) => {
     log.error('Mattermost WebSocket error', { error: err.message });
+    sendCriticalAlert(
+      'Mattermost WebSocket Error',
+      'Error occurred in Mattermost WebSocket connection',
+      { error: err.message }
+    );
   });
 
   // Set up Slack message listener for new messages
@@ -155,10 +202,22 @@ async function init() {
       log.error('Error processing Slack reaction_removed', { error: err.message });
     }
   });
+  } catch (err) {
+    log.error('Bridge initialization error', { error: err.message });
+    await sendCriticalAlert(
+      'Bridge Initialization Failed',
+      'Critical error during bridge initialization',
+      { error: err.message, stack: err.stack }
+    );
+    throw err;
+  }
 }
 
 // Start the bridge
-init().catch(err => log.error('Bridge initialization failed', { error: err.message }));
+init().catch(err => {
+  log.error('Bridge initialization failed', { error: err.message });
+  process.exit(1);
+});
 
 // Add health check endpoint for monitoring
 app.get('/health', (req, res) => {
@@ -169,7 +228,25 @@ app.get('/health', (req, res) => {
   });
 });
 
+// Add metrics endpoint for Prometheus
+app.get('/metrics', async (req, res) => {
+  try {
+    res.set('Content-Type', getMetricsContentType());
+    const metrics = await getMetrics();
+    res.end(metrics);
+  } catch (err) {
+    log.error('Error generating metrics', { error: err.message });
+    res.status(500).end();
+  }
+});
+
 // Start the server
 app.listen(config.port, () => {
   log.info(`Bridge server started`, { port: config.port });
+  
+  // Start periodic health checks if configured
+  const healthCheckInterval = parseInt(process.env.HEALTH_CHECK_INTERVAL_MINUTES || '60', 10);
+  if (process.env.ALERT_CHANNEL) {
+    startPeriodicHealthCheck(healthCheckInterval * 60 * 1000);
+  }
 });

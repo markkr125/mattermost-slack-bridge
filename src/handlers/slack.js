@@ -2,7 +2,9 @@
 const { convertSlackToMattermost } = require('../utils/markdown');
 const { setSlackToMm, getSlackToMm, setMmToSlack, setReactionMapping } = require('../storage/redis');
 const { slackToMmChannelMap } = require('../config/environment');
+const { getSlackUserMapping } = require('../config/user-mappings');
 const { createContextLogger } = require('../utils/logger');
+const { startMessageTimer, recordMessageBridged, recordFailedEvent } = require('../metrics/metrics');
 
 const log = createContextLogger('slack');
 
@@ -26,35 +28,48 @@ function getSlackBotUserId() {
  * Handle new Slack messages
  */
 async function handleSlackMessage(slackApp, mmApi, message) {
-  // Guard conditions for message filtering
-  // Check if this channel is mapped
-  const mmChannelId = slackToMmChannelMap.get(message.channel);
-  if (!mmChannelId) return; // Channel not in our mappings
-  if (!message.user) return; // No user (system messages, etc.)
-  if (message.user === slackBotUserId) return; // Skip our own messages
-  if (message.subtype) return; // Skip messages with subtypes (handled by event listener)
-
-  let userName = 'Unknown User';
-  let avatarUrl = '';
+  const endTimer = startMessageTimer('slack', 'mattermost');
+  
   try {
-    const userInfo = await slackApp.client.users.info({ user: message.user });
-    userName = userInfo.user?.profile?.display_name || userInfo.user?.name || 'Unknown User';
-    avatarUrl = userInfo.user?.profile?.image_original || userInfo.user?.profile?.image_1024 || '';  // Public URL
-  } catch (err) {
-    log.error('Error fetching Slack user info', { userId: message.user, error: err.message });
-  }
+    // Guard conditions for message filtering
+    // Check if this channel is mapped
+    const mmChannelId = slackToMmChannelMap.get(message.channel);
+    if (!mmChannelId) return; // Channel not in our mappings
+    if (!message.user) return; // No user (system messages, etc.)
+    if (message.user === slackBotUserId) return; // Skip our own messages
+    if (message.subtype) return; // Skip messages with subtypes (handled by event listener)
 
-  // Convert Slack markdown to Mattermost markdown
-  let text = convertSlackToMattermost(message.text);
-  const mmPost = {
-    channel_id: mmChannelId,
-    message: text,
-    props: {
-      from_webhook: 'true',  // Enables overrides
-      override_username: userName,  // Custom display name
-      override_icon_url: avatarUrl  // Custom avatar (public URL)
+    let userName = 'Unknown User';
+    let avatarUrl = '';
+    
+    // Check if there's a user mapping override
+    const userMapping = getSlackUserMapping(message.user);
+    if (userMapping) {
+      userName = userMapping.displayName || userName;
+      avatarUrl = userMapping.avatarUrl || avatarUrl;
+      log.debug('Using mapped user info', { slackUserId: message.user, userName, avatarUrl });
+    } else {
+      // Fetch from Slack API if no mapping
+      try {
+        const userInfo = await slackApp.client.users.info({ user: message.user });
+        userName = userInfo.user?.profile?.display_name || userInfo.user?.name || 'Unknown User';
+        avatarUrl = userInfo.user?.profile?.image_original || userInfo.user?.profile?.image_1024 || '';  // Public URL
+      } catch (err) {
+        log.error('Error fetching Slack user info', { userId: message.user, error: err.message });
+      }
     }
-  };
+
+    // Convert Slack markdown to Mattermost markdown
+    let text = convertSlackToMattermost(message.text);
+    const mmPost = {
+      channel_id: mmChannelId,
+      message: text,
+      props: {
+        from_webhook: 'true',  // Enables overrides
+        override_username: userName,  // Custom display name
+        override_icon_url: avatarUrl  // Custom avatar (public URL)
+      }
+    };
 
   let mmRootId;
   if (message.thread_ts) {
@@ -117,6 +132,15 @@ async function handleSlackMessage(slackApp, mmApi, message) {
       slackTs: message.ts, 
       mmPostId: newPost.data.id 
     });
+  }
+  
+  // Record successful message bridging
+  recordMessageBridged('slack', 'mattermost');
+  endTimer();
+  } catch (err) {
+    log.error('Error handling Slack message', { error: err.message });
+    recordFailedEvent('slack', 'message', err.name || 'Error');
+    throw err;
   }
 }
 

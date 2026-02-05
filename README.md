@@ -34,13 +34,18 @@
 - **Bidirectional messaging** between Slack and Mattermost channels
 - **Multiple channel pairs** - bridge multiple Slack-Mattermost channel pairs simultaneously
 - **Advanced channel mapping** - flexible JSON-based configuration for channel routing
+- **User mapping & identity spoofing** - map user IDs to custom display names and avatars
 - **Thread support** - replies stay organized in threads
 - **File sharing** - attachments sync between platforms
 - **Message editing** - edits propagate to the other platform
 - **Message deletion** - deletions sync bidirectionally
 - **Reaction synchronization** - emoji reactions sync bidirectionally with automatic translation
 - **Username & avatar preservation** - see who sent each message
-- **Persistent message mapping** - using Redis with configurable expiry (default: 6 months)
+- **Flexible storage backend** - Redis (default) or in-memory storage for development
+- **Prometheus metrics** - `/metrics` endpoint for monitoring and observability
+- **Exponential backoff reconnection** - smart reconnection with jitter to avoid thundering herd
+- **Critical error alerting** - send alerts to configured Slack or Mattermost channel
+- **Periodic health checks** - automatic status messages to monitor bridge health
 - **Auto-reconnection** - WebSocket reconnects automatically on disconnect
 - **Structured logging** - contextual logging with configurable log levels
 - **Docker deployment** - ready-to-use Docker and docker-compose setup
@@ -197,18 +202,98 @@ CHANNEL_MAPPINGS=[{"slack":"C01ABC123","mattermost":"ch1abc123"},{"slack":"C02DE
 
 ---
 
-### Redis Setup
+### Storage Backend Configuration
 
-Add Redis connection details to your `.env` file:
+The bridge supports two storage backends for message mappings:
+
+**Option 1: Redis (Recommended for Production)**
 
 ```env
+STORAGE_BACKEND=redis
 REDIS_URL=redis://localhost:6379
 REDIS_EXPIRY_DAYS=180  # Default: 6 months
 ```
 
+- **Pros**: Persistent storage, survives restarts, suitable for production
+- **Cons**: Requires Redis server installation
+
+**Option 2: In-Memory (Development/Testing)**
+
+```env
+STORAGE_BACKEND=memory
+```
+
+- **Pros**: No external dependencies, instant setup
+- **Cons**: All mappings lost on restart, not suitable for production
+
 **Configuration Options:**
-- `REDIS_URL`: Connection string for your Redis instance
+- `STORAGE_BACKEND`: `redis` (default) or `memory`
+- `REDIS_URL`: Connection string for your Redis instance (when using Redis backend)
 - `REDIS_EXPIRY_DAYS`: How long to keep message mappings (default: 180 days)
+
+---
+
+### User Mapping Configuration
+
+Override user identities for custom display names and avatars:
+
+```env
+# Map Slack users to custom Mattermost display names/avatars
+SLACK_USER_MAPPINGS={"U12345":{"mm_user_id":"abc123","display_name":"John Doe","avatar_url":"https://example.com/avatar.jpg"}}
+
+# Map Mattermost users to custom Slack display names/avatars  
+MM_USER_MAPPINGS={"abc123":{"slack_user_id":"U12345","display_name":"John Doe","avatar_url":"https://example.com/avatar.jpg"}}
+```
+
+**Use Cases:**
+- Consistent usernames across platforms
+- Custom avatars for bots or service accounts
+- Override default username/avatar fetching
+- Fix mismatched identities
+
+---
+
+### Metrics & Monitoring
+
+The bridge exposes Prometheus-compatible metrics at `/metrics` endpoint:
+
+**Available Metrics:**
+- `bridge_messages_total` - Counter of messages bridged per direction
+- `bridge_message_latency_seconds` - Histogram of message processing latency
+- `bridge_reconnections_total` - Counter of reconnection attempts
+- `bridge_failed_events_total` - Counter of failed events
+- `bridge_connection_status` - Gauge of connection status (1=connected, 0=disconnected)
+- Plus default Node.js metrics (CPU, memory, etc.)
+
+**Example Prometheus scrape config:**
+
+```yaml
+scrape_configs:
+  - job_name: 'mattermost-slack-bridge'
+    static_configs:
+      - targets: ['localhost:3000']
+```
+
+---
+
+### Error Alerting & Status Monitoring
+
+Configure critical error alerts and periodic health checks:
+
+```env
+# Channel to send alerts (format: 'slack:CHANNEL_ID' or 'mm:CHANNEL_ID')
+ALERT_CHANNEL=slack:C0123456789
+
+# Periodic health check interval in minutes (default: 60)
+HEALTH_CHECK_INTERVAL_MINUTES=60
+```
+
+**Alert Types:**
+- **Critical alerts**: Authentication failures, permanent errors, reconnection failures
+- **Status messages**: Periodic "Bridge healthy" messages
+- **Error notifications**: WebSocket errors, initialization failures
+
+The bridge uses exponential backoff with jitter for smart reconnections.
 
 ---
 
@@ -524,11 +609,20 @@ All the same environment variables from `.env.example` can be passed to Docker:
 - ~~Reaction synchronization~~
 - ~~Better logging and monitoring~~
 - ~~Docker deployment option~~
+- ~~Flexible storage backends (Redis + in-memory)~~
+- ~~User mapping and identity spoofing~~
+- ~~Prometheus metrics and observability~~
+- ~~Exponential backoff reconnections~~
+- ~~Critical error alerting~~
+- ~~Periodic health status monitoring~~
 
 ### Planned 🚧
+- Slack custom emoji support
+- Worker pools for high-volume scenarios
+- Performance benchmarking tools
 - Slash commands support
 - User presence synchronization
-- Performance optimizations for large deployments
+- Optional sharding for distributed deployments
 
 ---
 

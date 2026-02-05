@@ -78,7 +78,8 @@ const config = {
     token: process.env.MM_TOKEN,
     url: process.env.MM_URL,
   },
-  redis: {
+  storage: {
+    backend: process.env.STORAGE_BACKEND || 'redis',
     url: process.env.REDIS_URL || 'redis://localhost:6379',
     expiryDays: parseInt(process.env.REDIS_EXPIRY_DAYS || '180', 10),
   },
