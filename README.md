@@ -25,6 +25,8 @@
 
 ### Supported ✅
 - **Bidirectional messaging** between Slack and Mattermost channels
+- **Multiple channel pairs** - bridge multiple Slack-Mattermost channel pairs simultaneously
+- **Advanced channel mapping** - flexible JSON-based configuration for channel routing
 - **Thread support** - replies stay organized in threads
 - **File sharing** - attachments sync between platforms
 - **Message editing** - edits propagate to the other platform
@@ -36,7 +38,6 @@
 ### Not Supported ❌
 - Direct messages (DMs)
 - Huddles/voice channels
-- Multiple channel pairs (currently supports one channel pair)
 
 ---
 
@@ -121,6 +122,49 @@ Edit `.env` with your credentials (see [Configuration](#-configuration) section 
 ---
 
 ## ⚙️ Configuration
+
+### Channel Mapping Configuration
+
+The bridge supports two configuration modes:
+
+#### 1. Single Channel Pair (Legacy Mode)
+
+For a simple single channel pair, use environment variables:
+
+```env
+SLACK_CHANNEL_ID=C0123456789
+MM_CHANNEL_ID=abcde12345
+```
+
+#### 2. Multiple Channel Pairs (Advanced Mode)
+
+For multiple channel pairs, use the `CHANNEL_MAPPINGS` environment variable with JSON format:
+
+```env
+CHANNEL_MAPPINGS=[{"slack":"C0123456789","mattermost":"abcde12345"},{"slack":"C9876543210","mattermost":"zyxwv98765"}]
+```
+
+**Configuration Examples:**
+
+**Two channel pairs:**
+```env
+CHANNEL_MAPPINGS=[{"slack":"C01ABC123","mattermost":"ch1abc123"},{"slack":"C02DEF456","mattermost":"ch2def456"}]
+```
+
+**Three channel pairs:**
+```env
+# Note: Multi-line formatting shown below is for readability only.
+# The actual .env value must be on a single line or properly escaped for your shell.
+CHANNEL_MAPPINGS=[{"slack":"C01ABC123","mattermost":"ch1abc123"},{"slack":"C02DEF456","mattermost":"ch2def456"},{"slack":"C03GHI789","mattermost":"ch3ghi789"}]
+```
+
+**Notes:**
+- If `CHANNEL_MAPPINGS` is set, it takes precedence over `SLACK_CHANNEL_ID` and `MM_CHANNEL_ID`
+- Each mapping requires both `slack` and `mattermost` fields
+- The bridge will log all configured channel mappings on startup
+- Thread mappings are kept separate per channel pair (no cross-channel thread confusion)
+
+---
 
 ### Redis Setup
 
@@ -303,10 +347,10 @@ The bridge automatically reconnects after 5 seconds. If it keeps disconnecting:
 - ~~Better error handling~~
 - ~~Persistent message storage with Redis~~
 - ~~Edit/delete message support~~
+- ~~Support multiple channel pairs~~
+- ~~Advanced channel mapping configuration~~
 
 ### Planned 🚧
-- Support multiple channel pairs
-- Advanced channel mapping configuration
 - Reaction synchronization
 - Better logging and monitoring
 - Docker deployment option
