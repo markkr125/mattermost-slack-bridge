@@ -18,6 +18,10 @@ let alertingConfig = {
  */
 function initializeAlerting(slackApp, mmApi, channelId) {
   if (!channelId) {
+    alertingConfig.enabled = false;
+    alertingConfig.slackApp = null;
+    alertingConfig.mmApi = null;
+    alertingConfig.alertChannel = null;
     log.info('Alerting disabled - no alert channel configured');
     return;
   }
