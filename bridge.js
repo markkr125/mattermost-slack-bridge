@@ -31,7 +31,7 @@ if (process.env.CHANNEL_MAPPINGS) {
         throw new Error(`Channel mapping at index ${index} must have both 'slack' and 'mattermost' fields`);
       }
     });
-    console.log(`Loaded ${channelMappings.length} channel mapping(s) from CHANNEL_MAPPINGS`);
+    console.log(`Loaded ${channelMappings.length} channel ${channelMappings.length === 1 ? 'mapping' : 'mappings'} from CHANNEL_MAPPINGS`);
   } catch (err) {
     console.error('Error parsing CHANNEL_MAPPINGS:', err.message);
     console.error('Falling back to legacy single channel configuration');
@@ -48,6 +48,7 @@ if (channelMappings.length === 0) {
     console.log('Using legacy single channel pair configuration');
   } else {
     console.error('No channel mappings configured. Please set either CHANNEL_MAPPINGS or both SLACK_CHANNEL_ID and MM_CHANNEL_ID');
+    console.error('Example CHANNEL_MAPPINGS format: [{"slack":"C0123456789","mattermost":"abcde12345"}]');
     process.exit(1);
   }
 }

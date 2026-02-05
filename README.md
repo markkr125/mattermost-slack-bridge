@@ -151,13 +151,11 @@ CHANNEL_MAPPINGS=[{"slack":"C0123456789","mattermost":"abcde12345"},{"slack":"C9
 CHANNEL_MAPPINGS=[{"slack":"C01ABC123","mattermost":"ch1abc123"},{"slack":"C02DEF456","mattermost":"ch2def456"}]
 ```
 
-**Three channel pairs (formatted for readability):**
+**Three channel pairs:**
 ```env
-CHANNEL_MAPPINGS=[
-  {"slack":"C01ABC123","mattermost":"ch1abc123"},
-  {"slack":"C02DEF456","mattermost":"ch2def456"},
-  {"slack":"C03GHI789","mattermost":"ch3ghi789"}
-]
+# Note: Multi-line formatting shown below is for readability only.
+# The actual .env value must be on a single line or properly escaped for your shell.
+CHANNEL_MAPPINGS=[{"slack":"C01ABC123","mattermost":"ch1abc123"},{"slack":"C02DEF456","mattermost":"ch2def456"},{"slack":"C03GHI789","mattermost":"ch3ghi789"}]
 ```
 
 **Notes:**
