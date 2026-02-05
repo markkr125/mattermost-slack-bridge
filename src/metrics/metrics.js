@@ -142,6 +142,19 @@ function getMetricsContentType() {
   return register.contentType;
 }
 
+/**
+ * Get current connection status
+ * @returns {Object} Connection status for platforms
+ */
+function getConnectionStatus() {
+  // Note: This is a simplified version for slash commands
+  // In a full implementation, you'd track actual connection state
+  return {
+    slack: true,  // Placeholder
+    mattermost: true  // Placeholder
+  };
+}
+
 module.exports = {
   recordMessageBridged,
   recordMessageLatency,
@@ -149,6 +162,7 @@ module.exports = {
   recordReconnection,
   recordFailedEvent,
   setConnectionStatus,
+  getConnectionStatus,
   getMetrics,
   getMetricsContentType,
 };
