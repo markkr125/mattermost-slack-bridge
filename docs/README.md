@@ -65,6 +65,39 @@ Welcome to the Mattermost-Slack Bridge documentation! This directory contains co
 
 ---
 
+### [Environment Variables Reference](environment-variables.md)
+**Purpose**: Complete reference for all configuration environment variables
+
+**Topics Covered**:
+- Core configuration (Slack, Mattermost, server)
+- Channel mapping configuration
+- Storage backend options (Redis, in-memory)
+- Logging and monitoring settings
+- User mapping and identity customization
+- Alerting and health checks
+- Worker pools and performance tuning
+- Presence synchronization settings
+- Configuration examples for different scenarios
+
+**Audience**: System administrators, DevOps engineers, developers
+
+---
+
+### [Usage Examples](usage-examples.md)
+**Purpose**: Practical examples for using new features
+
+**Topics Covered**:
+- Worker pool usage for concurrent processing
+- Performance monitoring and benchmarking
+- Slash command examples
+- Presence synchronization setup
+- Production-ready configurations
+- Troubleshooting common issues
+
+**Audience**: Developers, system administrators
+
+---
+
 ## 🚀 Quick Start Paths
 
 ### I want to understand how the bridge works
@@ -106,7 +139,9 @@ mattermost-slack-bridge/
 │   ├── architecture.md         # System design
 │   ├── api.md                  # API reference
 │   ├── development.md          # Development guide
-│   └── deployment.md           # Deployment guide
+│   ├── deployment.md           # Deployment guide
+│   ├── environment-variables.md # Environment variable reference
+│   └── usage-examples.md       # Feature usage examples
 ├── .github/                    # GitHub configuration
 │   ├── workflows/              # CI/CD workflows
 │   └── copilot-instructions.md # AI assistant guidelines
