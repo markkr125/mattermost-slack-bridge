@@ -38,9 +38,13 @@
 - **File sharing** - attachments sync between platforms
 - **Message editing** - edits propagate to the other platform
 - **Message deletion** - deletions sync bidirectionally
+- **Reaction synchronization** - emoji reactions sync bidirectionally with automatic translation
 - **Username & avatar preservation** - see who sent each message
 - **Persistent message mapping** - using Redis with configurable expiry (default: 6 months)
 - **Auto-reconnection** - WebSocket reconnects automatically on disconnect
+- **Structured logging** - contextual logging with configurable log levels
+- **Docker deployment** - ready-to-use Docker and docker-compose setup
+- **Health monitoring** - built-in health check endpoint for container orchestration
 
 ### Not Supported ❌
 - Direct messages (DMs)
@@ -49,6 +53,26 @@
 ---
 
 ## 🚀 Quick Start
+
+### Option 1: Run with Docker (Recommended)
+
+```bash
+# Clone the repository
+git clone https://github.com/markkr125/mattermost-slack-bridge.git
+cd mattermost-slack-bridge
+
+# Configure environment
+cp .env.example .env
+# Edit .env with your settings
+
+# Start with Docker Compose
+docker-compose up -d
+
+# View logs
+docker-compose logs -f bridge-app
+```
+
+### Option 2: Run Locally
 
 ```bash
 # Clone the repository
@@ -188,6 +212,24 @@ REDIS_EXPIRY_DAYS=180  # Default: 6 months
 
 ---
 
+### Logging Configuration
+
+Configure logging levels and behavior:
+
+```env
+LOG_LEVEL=info  # Options: error, warn, info, debug
+```
+
+**Log Levels:**
+- `error`: Only critical errors
+- `warn`: Warnings and errors
+- `info`: General information, warnings, and errors (default)
+- `debug`: Detailed debugging information (includes all levels)
+
+The bridge uses structured logging with contextual information for better monitoring and troubleshooting.
+
+---
+
 ### Slack App Configuration
 
 #### Step 1: Create a Slack App
@@ -209,6 +251,8 @@ REDIS_EXPIRY_DAYS=180  # Default: 6 months
    | `channels:history` | Read channel messages |
    | `channels:read` | View channel info |
    | `users:read` | Get user profiles |
+   | `reactions:read` | Read emoji reactions |
+   | `reactions:write` | Add/remove emoji reactions |
 
 3. Click **Install to Workspace** at the top
 4. **Copy the Bot User OAuth Token** (starts with `xoxb-`) → This is your `SLACK_BOT_TOKEN`
@@ -219,9 +263,12 @@ REDIS_EXPIRY_DAYS=180  # Default: 6 months
 2. Toggle **Enable Events** to **On**
 3. Set **Request URL** to: `http://your-server:3000/slack/events`
    - For local development, use [ngrok](https://ngrok.com/): `ngrok http 3000`
+   - For Docker deployment, ensure your container is accessible
    - Your server must be running for Slack to verify this URL
 4. Under **Subscribe to bot events**, add:
    - `message.channels` - Listen for channel messages
+   - `reaction_added` - Listen for reactions being added
+   - `reaction_removed` - Listen for reactions being removed
 
 5. **Save Changes**
 
@@ -285,15 +332,24 @@ MM_CHANNEL_ID=abcde12345
 
 ### Starting the Bridge
 
+**With Docker:**
+```bash
+docker-compose up -d
+docker-compose logs -f bridge-app
+```
+
+**Locally:**
 ```bash
 npm start
 ```
 
 You should see:
 ```
-Redis connected
-Mattermost WebSocket connected
-Bridge running on port 3000
+[2026-02-05 10:30:00] INFO [redis]: Redis connected successfully
+[2026-02-05 10:30:00] INFO [main]: Slack bot authenticated
+[2026-02-05 10:30:00] INFO [main]: Mattermost bot authenticated
+[2026-02-05 10:30:00] INFO [main]: Mattermost WebSocket connected
+[2026-02-05 10:30:00] INFO [main]: Bridge server started
 ```
 
 ### Testing the Connection
@@ -302,6 +358,25 @@ Bridge running on port 3000
 2. Send a message in Mattermost → should appear in Slack
 3. Edit a message on either platform → edit syncs to the other
 4. Delete a message → deletion syncs bidirectionally
+5. Add a reaction (emoji) → reaction syncs to the other platform
+6. Remove a reaction → removal syncs bidirectionally
+
+### Health Check
+
+The bridge exposes a health check endpoint for monitoring:
+
+```bash
+curl http://localhost:3000/health
+```
+
+Response:
+```json
+{
+  "status": "operational",
+  "service": "mattermost-slack-bridge",
+  "timestamp": "2026-02-05T10:30:00.000Z"
+}
+```
 
 ---
 
@@ -346,6 +421,96 @@ The bridge automatically reconnects after 5 seconds. If it keeps disconnecting:
 - Verify `MM_TOKEN` is valid and hasn't expired
 - Check firewall settings
 
+### Docker Issues
+
+**Container won't start:**
+```bash
+# Check logs
+docker-compose logs bridge-app
+
+# Verify environment variables
+docker-compose config
+
+# Restart services
+docker-compose restart
+```
+
+**Health check failing:**
+```bash
+# Test health endpoint
+docker exec mattermost-slack-bridge wget -q -O- http://localhost:3000/health
+```
+
+---
+
+## 🐳 Docker Deployment
+
+### Using Docker Compose (Recommended)
+
+1. **Configure environment:**
+```bash
+cp .env.example .env
+# Edit .env with your actual credentials
+```
+
+2. **Start the services:**
+```bash
+docker-compose up -d
+```
+
+3. **View logs:**
+```bash
+docker-compose logs -f
+```
+
+4. **Stop the services:**
+```bash
+docker-compose down
+```
+
+### Using Docker Only
+
+1. **Start Redis:**
+```bash
+docker run -d --name bridge-redis \
+  -p 6379:6379 \
+  redis:7-alpine
+```
+
+2. **Build the bridge image:**
+```bash
+docker build -t mattermost-slack-bridge .
+```
+
+3. **Run the bridge:**
+```bash
+docker run -d --name bridge-app \
+  --link bridge-redis:redis \
+  -p 3000:3000 \
+  -e SLACK_BOT_TOKEN=xoxb-your-token \
+  -e SLACK_SIGNING_SECRET=your-secret \
+  -e MM_TOKEN=your-mm-token \
+  -e MM_URL=https://your.mattermost.com \
+  -e CHANNEL_MAPPINGS='[{"slack":"C123","mattermost":"mm123"}]' \
+  -e REDIS_URL=redis://redis:6379 \
+  -e LOG_LEVEL=info \
+  mattermost-slack-bridge
+```
+
+### Environment Variables for Docker
+
+All the same environment variables from `.env.example` can be passed to Docker:
+
+- `SLACK_BOT_TOKEN` - Slack bot OAuth token
+- `SLACK_SIGNING_SECRET` - Slack app signing secret
+- `MM_TOKEN` - Mattermost personal access token
+- `MM_URL` - Mattermost server URL
+- `CHANNEL_MAPPINGS` - JSON array of channel mappings
+- `REDIS_URL` - Redis connection URL
+- `REDIS_EXPIRY_DAYS` - Message mapping expiry (default: 180)
+- `LOG_LEVEL` - Logging level (error, warn, info, debug)
+- `PORT` - Server port (default: 3000)
+
 ---
 
 ## 🗺️ Roadmap
@@ -356,11 +521,14 @@ The bridge automatically reconnects after 5 seconds. If it keeps disconnecting:
 - ~~Edit/delete message support~~
 - ~~Support multiple channel pairs~~
 - ~~Advanced channel mapping configuration~~
+- ~~Reaction synchronization~~
+- ~~Better logging and monitoring~~
+- ~~Docker deployment option~~
 
 ### Planned 🚧
-- Reaction synchronization
-- Better logging and monitoring
-- Docker deployment option
+- Slash commands support
+- User presence synchronization
+- Performance optimizations for large deployments
 
 ---
 
@@ -370,6 +538,7 @@ Contributions are welcome! Please feel free to submit issues or pull requests.
 
 ### Development Setup
 
+**Local Development:**
 ```bash
 git clone https://github.com/markkr125/mattermost-slack-bridge.git
 cd mattermost-slack-bridge
@@ -377,6 +546,11 @@ npm install
 cp .env.example .env
 # Edit .env with your test credentials
 npm start
+```
+
+**With Docker:**
+```bash
+docker-compose up --build
 ```
 
 For detailed development instructions, see [Development Guide](docs/development.md).
@@ -388,6 +562,13 @@ npm test                 # Run all tests
 npm run test:watch      # Run tests in watch mode
 npm run test:coverage   # Run tests with coverage report
 ```
+
+### Continuous Integration
+
+The project uses GitHub Actions for automated testing:
+- Tests run automatically on pull requests to `main`
+- Includes unit tests with 70%+ coverage requirement
+- Tests run against Node.js 18 with Redis 7
 
 ### Project Structure
 
